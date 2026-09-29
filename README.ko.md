@@ -1,0 +1,105 @@
+# MiSTer FTP
+
+[English](README.md)
+
+[MiSTer FPGA](https://github.com/MiSTer-devel/Wiki_MiSTer/wiki)와 파일을 주고받는 macOS 앱입니다. 실행하면 같은 네트워크에서 MiSTer를 자동으로 찾아 SD 카드를 엽니다. 따로 설정할 것은 없습니다.
+
+![MiSTer를 찾는 화면](docs/discovery-ko.png)
+
+![파일 목록과 전송](docs/browser-ko.png)
+
+## 설치
+
+macOS 15 이상이 필요합니다. Apple 실리콘 Mac과 Intel Mac 모두 됩니다.
+
+1. [Releases](https://github.com/Simon-nhelix/mister-ftp/releases)에서 `MiSTer-FTP-x.y.z.zip`을 받아 압축을 풉니다.
+2. **MiSTer FTP.app**을 응용 프로그램 폴더로 옮깁니다.
+3. 앱을 엽니다. Apple 공증을 받지 않은 앱이라 처음에는 macOS가 막습니다. **완료**를 누르고 **시스템 설정 › 개인정보 보호 및 보안**을 엽니다. 아래로 내려서 "MiSTer FTP" 옆의 **그래도 열기**를 누르세요.
+4. "로컬 네트워크의 기기를 찾고 연결"해도 되는지 물으면 **허용**을 누르세요.
+
+3번 대신 터미널에서 이 명령을 실행해도 됩니다.
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/MiSTer FTP.app"
+```
+
+## 쓰는 법
+
+1. MiSTer를 켜고 Mac과 같은 공유기에 연결합니다.
+2. 앱을 실행합니다. MiSTer를 찾으면 SD 카드(`/media/fat`) 목록이 열립니다.
+
+| 하고 싶은 일 | 방법 |
+| --- | --- |
+| MiSTer로 올리기 | Finder에서 파일·폴더를 창에 끌어다 놓기, 또는 **올리기** (⌘U) |
+| Mac으로 받기 | 항목을 고르고 **받기** (⌘D), 파일 더블클릭, 또는 오른쪽 클릭 › 다른 위치에 받기 |
+| 폴더 열기 | 더블클릭 또는 Return, 위 폴더는 ⌘↑, 뒤로·앞으로는 ⌘[ ⌘] |
+| 새 폴더 · 이름 바꾸기 · 삭제 | ⇧⌘N · ⌘E · ⌘⌫ (오른쪽 클릭 메뉴에도 있어요) |
+| 다시 찾기 · 주소로 연결 | ⇧⌘R · ⌘K |
+
+- 받은 파일은 기본으로 `~/Downloads`에 저장됩니다. 설정(⌘,)에서 바꿀 수 있어요.
+- 올릴 때 `.DS_Store`, `._*` 같은 macOS 찌꺼기 파일은 건너뜁니다. 한글 파일 이름은 NFC로 바꾸고, FAT/exFAT에서 쓸 수 없는 문자(`\ : * ? " < > |`)는 `_`로 바꿉니다.
+- 같은 이름이 있으면 덮어쓸지, 건너뛸지 먼저 묻습니다.
+- 삭제는 MiSTer에서 바로 지워지며 되돌릴 수 없습니다.
+
+## 언어
+
+화면은 한국어와 영어를 지원합니다. macOS 언어 설정을 따릅니다. 한국어면 한국어로, 그 밖의 언어면 영어로 보입니다.
+
+이 앱만 다른 언어로 보려면 시스템 설정 › 일반 › 언어 및 지역 › 응용 프로그램에서 MiSTer FTP를 추가하고 언어를 고르세요. 앱을 다시 열면 바뀝니다.
+
+## MiSTer를 찾는 방법
+
+세 가지를 동시에 합니다. 먼저 찾은 쪽으로 연결합니다.
+
+1. 지난번에 연결한 주소 (설정에서 고정 주소도 지정 가능)
+2. `MiSTer.local` 이름 (멀티캐스트 DNS)
+3. Mac이 속한 사설 네트워크(보통 `/24`)의 21번 포트 스캔
+
+FTP 서버가 MiSTer인지 확인하려고 로그인한 뒤 `/media/fat` 폴더가 있는지 봅니다. 로그인은 이름이나 이전 주소로 찾은 기기, 그리고 인사말이 ProFTPD(MiSTer 기본 서버)인 기기에만 시도합니다. NAS나 공유기 같은 다른 FTP 서버에는 로그인하지 않습니다.
+
+기본 계정은 MiSTer 기본값인 `root` / `1`입니다. 비밀번호를 바꿨다면 연결 화면이나 설정에서 입력하세요. 바꾼 비밀번호는 키체인에 저장됩니다.
+
+## 빌드
+
+Xcode 26 (Swift 6.3) 이상이 필요합니다.
+
+```sh
+./scripts/build_app.sh --install   # 릴리스 빌드(Apple 실리콘 + Intel) 후 /Applications에 설치
+./scripts/build_app.sh --zip       # 릴리스 빌드를 dist/MiSTer-FTP-<버전>.zip으로 묶기
+swift test                         # 단위 테스트
+MISTER_FTP_TEST_HOST=192.168.1.11 swift test --filter LiveMiSTerTests   # 실제 MiSTer 테스트
+swift scripts/make_icon.swift      # 앱 아이콘(Resources/AppIcon.icns) 다시 만들기
+./scripts/sync_strings.sh          # 코드의 화면 문구를 Resources/Localizable.xcstrings에 반영
+```
+
+실제 MiSTer 테스트는 MiSTer의 `/tmp`(RAM)에만 쓰고, 끝나면 지웁니다. SD 카드에는 쓰지 않습니다.
+
+화면 문구는 코드에 한국어로 씁니다. 이 한국어가 번역 키입니다. 문구를 더하거나 바꾸면 `./scripts/sync_strings.sh`를 실행하세요. `needs English`로 나온 문구에 영어를 넣으면 됩니다(Xcode로 카탈로그를 열거나 JSON을 직접 편집). 빌드 스크립트가 카탈로그를 `en.lproj`, `ko.lproj`로 바꿔 앱에 넣습니다.
+
+디버그 빌드는 화면 점검용 자동 둘러보기를 지원합니다. 창 캡처를 PNG로 저장하고 MiSTer의 `/tmp`에만 테스트 파일을 씁니다.
+
+```sh
+swift build && MISTERFTP_SNAPSHOT_DIR=/tmp/misterftp-shots MISTERFTP_DEMO=1 .build/debug/MiSTerFTP
+```
+
+디버그 빌드에는 번역 파일이 없어서 코드의 한국어가 그대로 보입니다. 영어 화면을 보려면 카탈로그를 빌드 폴더에 넣고 언어를 지정하세요.
+
+```sh
+for c in Resources/*.xcstrings; do xcrun xcstringstool compile "$c" -o "$(swift build --show-bin-path)"; done
+.build/debug/MiSTerFTP -AppleLanguages '(en)'
+```
+
+## 구조
+
+```text
+Sources/FTPKit/      FTP 클라이언트(POSIX 소켓, 패시브 모드, MLSD), 목록 파서, LAN 탐색
+Sources/MiSTerFTP/   SwiftUI 앱: 탐색 화면, 파일 목록, 전송 대기열, 설정
+Tests/FTPKitTests/   파서 테스트와 실제 MiSTer 테스트
+scripts/             앱 번들 빌드·설치, 아이콘 생성, 화면 문구 동기화
+Resources/           Info.plist, AppIcon.icns, 문자열 카탈로그(Localizable, InfoPlist)
+docs/                README 스크린샷
+```
+
+## 라이선스
+
+MIT. [LICENSE](LICENSE)를 보세요.

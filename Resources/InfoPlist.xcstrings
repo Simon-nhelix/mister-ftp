@@ -1,0 +1,42 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSHumanReadableCopyright" : {
+      "comment" : "Copyright line in Finder's Get Info window",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A tool for moving files to and from a MiSTer FPGA"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiSTer FPGA와 파일을 주고받는 도구"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "comment" : "Why the app asks for Local Network access",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiSTer FTP uses the local network to find your MiSTer and move files to and from it."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "같은 네트워크에 있는 MiSTer를 찾고 파일을 주고받기 위해 로컬 네트워크에 접속해요."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
