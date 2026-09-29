@@ -45,6 +45,9 @@ if [ "$MODE" = "--zip" ]; then
   echo "Packed $ZIP"
   # Installed apps update only from archives signed with the key in the keychain.
   swift scripts/update_signing.swift sign "$ZIP"
+  # The zip holds the app. A loose copy here would show up in Spotlight and Launchpad.
+  "$LSREGISTER" -u "$APP" 2>/dev/null || true
+  rm -rf "$APP"
   echo
   echo "Upload both files to a release tagged v${VERSION}, for example:"
   echo "  gh release create v${VERSION} \"$ZIP\" \"$ZIP.sig\" --title \"MiSTer FTP ${VERSION}\" --notes-file NOTES.md"
