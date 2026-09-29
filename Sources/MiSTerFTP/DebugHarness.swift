@@ -8,6 +8,7 @@ import FTPKit
 ///
 ///   MISTERFTP_SNAPSHOT_DIR=/path  where PNG files go
 ///   MISTERFTP_DEMO=1              run the scripted tour, then quit
+///   MISTERFTP_DEMO=dialogs        press the real dialog buttons and check the results
 ///
 /// The tour writes only under /tmp on the MiSTer (RAM) and removes it again.
 @MainActor
@@ -36,6 +37,7 @@ enum DebugHarness {
         switch environment["MISTERFTP_DEMO"] {
         case "1": Task { await tour(model) }
         case "notfound": Task { await notFoundTour(model) }
+        case "dialogs": Task { await dialogTour(model) }
         default: break
         }
     }
@@ -261,6 +263,125 @@ extension DebugHarness {
                 NSApp.postEvent(event, atStart: false)
             }
         }
+    }
+}
+
+extension DebugHarness {
+    /// MISTERFTP_DEMO=dialogs: presses the real buttons in the delete, rename and
+    /// replace dialogs, then checks the result on the MiSTer. Works under /tmp only.
+    static func dialogTour(_ model: AppModel) async {
+        for _ in 0..<100 where model.phase != .connected { await sleep(0.1) }
+        guard let browser = model.browser else {
+            print("dialog check: not connected")
+            exit(1)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let base = "/tmp/misterftp-dialogs"
+        let names = ["delete-me.txt", "rename-me.txt", "clash.txt", "folder/inside.txt"]
+        let local = FileManager.default.temporaryDirectory.appendingPathComponent("misterftp-dialogs")
+        try? FileManager.default.removeItem(at: local)
+        try? FileManager.default.createDirectory(at: local.appendingPathComponent("folder"), withIntermediateDirectories: true)
+        for name in names + ["fresh.txt"] {
+            FileManager.default.createFile(atPath: local.appendingPathComponent(name).path, contents: Data("test \(name)\n".utf8))
+        }
+        do {
+            try await browser.session.perform { connection in
+                try connection.ensureDirectory(base)
+                try connection.ensureDirectory(base + "/folder")
+                for name in names {
+                    try connection.upload(local.appendingPathComponent(name), to: base + "/" + name) { _ in }
+                }
+            }
+        } catch {
+            print("dialog check setup failed: \(error)")
+            exit(1)
+        }
+        await browser.open(base)
+
+        func item(_ name: String) -> FTPItem? { browser.visibleItems.first { $0.name == name } }
+        func exists(_ path: String) async -> Bool {
+            let found = try? await browser.session.perform { try $0.stat(path) }
+            return (found ?? nil) != nil
+        }
+        func report(_ label: String, _ ok: Bool) {
+            print("dialog check \(label): \(ok ? "PASS" : "FAIL")")
+            fflush(stdout)
+        }
+        func waitUntil(_ condition: () async -> Bool) async -> Bool {
+            for _ in 0..<40 {
+                if await condition() { return true }
+                await sleep(0.1)
+            }
+            return false
+        }
+
+        if let file = item("delete-me.txt") {
+            browser.pendingDelete = [file]
+            await sleep(0.6)
+            report("delete dialog button pressed", pressAlertButton("삭제"))
+            report("file deleted", await waitUntil { !(await exists(file.path)) })
+        }
+        if let folder = item("folder") {
+            browser.pendingDelete = [folder]
+            await sleep(0.6)
+            _ = pressAlertButton("삭제")
+            report("folder with a file deleted", await waitUntil { !(await exists(folder.path)) })
+        }
+        if let file = item("rename-me.txt") {
+            browser.beginRename(file)
+            browser.renameText = "renamed.txt"
+            await sleep(0.6)
+            report("rename dialog button pressed", pressAlertButton("바꾸기"))
+            report("file renamed", await waitUntil { await exists(base + "/renamed.txt") })
+        }
+        browser.beginNewFolder()
+        browser.newFolderName = "made-by-dialog"
+        await sleep(0.6)
+        report("new folder dialog button pressed", pressAlertButton("만들기"))
+        report("folder created", await waitUntil { await exists(base + "/made-by-dialog") })
+
+        await browser.refresh()
+        browser.upload([local.appendingPathComponent("clash.txt")])
+        await sleep(0.6)
+        report("replace dialog button pressed", pressAlertButton("덮어쓰기"))
+        report("replaced file uploaded", await waitUntil {
+            model.transfers.jobs.contains { $0.name == "clash.txt" && $0.state == .done }
+        })
+        await browser.refresh()
+        browser.upload([local.appendingPathComponent("clash.txt"), local.appendingPathComponent("fresh.txt")])
+        await sleep(0.6)
+        report("skip dialog button pressed", pressAlertButton("건너뛰기"))
+        report("skip uploads only the new file", await waitUntil {
+            model.transfers.jobs.contains { $0.name == "fresh.txt" && $0.state == .done }
+                && model.transfers.jobs.filter { $0.name == "clash.txt" }.count == 1
+        })
+
+        let folder = FTPItem(name: "misterftp-dialogs", path: base, kind: .directory, size: nil, modified: nil)
+        try? await browser.session.perform { try $0.deleteRecursively(folder) }
+        try? FileManager.default.removeItem(at: local)
+        print("cleanup: remote folder \(await exists(base) ? "still exists" : "removed")")
+        fflush(stdout)
+        exit(0)
+    }
+
+    /// Clicks a button in the alert that is showing, as a person would.
+    static func pressAlertButton(_ title: String) -> Bool {
+        guard let sheet = NSApp.windows.compactMap(\.attachedSheet).first, let root = sheet.contentView else {
+            print("no alert is showing")
+            return false
+        }
+        var buttons: [NSButton] = []
+        func collect(_ view: NSView) {
+            if let button = view as? NSButton { buttons.append(button) }
+            view.subviews.forEach(collect)
+        }
+        collect(root)
+        guard let button = buttons.first(where: { $0.title == title }) else {
+            print("alert buttons: \(buttons.map(\.title))")
+            return false
+        }
+        button.performClick(nil)
+        return true
     }
 }
 

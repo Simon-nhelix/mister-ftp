@@ -331,8 +331,7 @@ final class BrowserModel {
         }
     }
 
-    func resolveConflict(overwrite: Bool) {
-        guard let pending = pendingConflict else { return }
+    func resolveConflict(_ pending: PendingUpload, overwrite: Bool) {
         pendingConflict = nil
         let clashes = Set(pending.clashes.map { $0.lowercased() })
         let urls = overwrite ? pending.urls : pending.urls.filter { !clashes.contains(UploadPlan.remoteName($0.lastPathComponent).lowercased()) }
@@ -346,8 +345,8 @@ final class BrowserModel {
         isCreatingFolder = true
     }
 
-    func createFolder() async {
-        let name = newFolderName.trimmingCharacters(in: .whitespaces)
+    func createFolder(named rawName: String) async {
+        let name = rawName.trimmingCharacters(in: .whitespaces)
         guard isValidName(name) else { return }
         let target = RemotePath.join(path, UploadPlan.remoteName(name))
         await run(String(localized: "폴더를 만드는 중…")) { try $0.makeDirectory(target) }
@@ -361,10 +360,9 @@ final class BrowserModel {
         pendingRename = item
     }
 
-    func commitRename() async {
-        guard let item = pendingRename else { return }
+    func rename(_ item: FTPItem, to newName: String) async {
         pendingRename = nil
-        let name = renameText.trimmingCharacters(in: .whitespaces)
+        let name = newName.trimmingCharacters(in: .whitespaces)
         guard isValidName(name), name != item.name else { return }
         let target = RemotePath.join(RemotePath.parent(of: item.path), UploadPlan.remoteName(name))
         await run(String(localized: "이름을 바꾸는 중…")) { try $0.rename(item.path, to: target) }
@@ -373,9 +371,9 @@ final class BrowserModel {
         anchor = target
     }
 
-    func confirmDelete() async {
-        guard let targets = pendingDelete else { return }
+    func delete(_ targets: [FTPItem]) async {
         pendingDelete = nil
+        guard !targets.isEmpty else { return }
         await run(String(localized: "삭제하는 중…")) { connection in
             for item in targets { try connection.deleteRecursively(item) }
         }

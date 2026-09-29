@@ -82,6 +82,12 @@ swift scripts/make_icon.swift      # 앱 아이콘(Resources/AppIcon.icns) 다�
 swift build && MISTERFTP_SNAPSHOT_DIR=/tmp/misterftp-shots MISTERFTP_DEMO=1 .build/debug/MiSTerFTP
 ```
 
+`MISTERFTP_DEMO=dialogs`는 삭제·이름 바꾸기·새 폴더·덮어쓰기 확인창의 실제 버튼을 누르고, MiSTer에서 결과를 확인합니다. 이것도 `/tmp`에서만 작업합니다.
+
+```sh
+swift build && MISTERFTP_DEMO=dialogs .build/debug/MiSTerFTP
+```
+
 디버그 빌드에는 번역 파일이 없어서 코드의 한국어가 그대로 보입니다. 영어 화면을 보려면 카탈로그를 빌드 폴더에 넣고 언어를 지정하세요.
 
 ```sh

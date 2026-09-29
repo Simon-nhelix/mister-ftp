@@ -82,6 +82,12 @@ Debug builds can tour the main screens and save window snapshots as PNG files. T
 swift build && MISTERFTP_SNAPSHOT_DIR=/tmp/misterftp-shots MISTERFTP_DEMO=1 .build/debug/MiSTerFTP
 ```
 
+`MISTERFTP_DEMO=dialogs` presses the real buttons in the Delete, Rename, New Folder and Replace dialogs, then checks the result on the MiSTer. It also works only under `/tmp`.
+
+```sh
+swift build && MISTERFTP_DEMO=dialogs .build/debug/MiSTerFTP
+```
+
 A debug build has no translation tables, so it shows the Korean text from the code. To see English, put the tables next to the debug build and choose the language:
 
 ```sh

@@ -24,9 +24,14 @@ struct BrowserView: View {
             .background(Theme.window)
         }
         .animation(.easeOut(duration: 0.22), value: model.transfers.hasJobs)
+        // Dialog buttons read their input when they are pressed, not later in a Task:
+        // closing the dialog clears the pending state before a Task gets to run.
         .alert("새 폴더", isPresented: $browser.isCreatingFolder) {
             TextField("폴더 이름", text: $browser.newFolderName)
-            Button("만들기") { Task { await browser.createFolder() } }
+            Button("만들기") {
+                let name = browser.newFolderName
+                Task { await browser.createFolder(named: name) }
+            }
             Button("취소", role: .cancel) {}
         } message: {
             Text("\(Places.displayName(for: browser.path)) 폴더 안에 만들어요.")
@@ -34,30 +39,33 @@ struct BrowserView: View {
         .alert("이름 바꾸기", isPresented: Binding(
             get: { browser.pendingRename != nil },
             set: { if !$0 { browser.pendingRename = nil } }
-        )) {
+        ), presenting: browser.pendingRename) { item in
             TextField("새 이름", text: $browser.renameText)
-            Button("바꾸기") { Task { await browser.commitRename() } }
-            Button("취소", role: .cancel) { browser.pendingRename = nil }
-        } message: {
-            Text(browser.pendingRename.map { String(localized: "‘\($0.name)’의 새 이름을 입력하세요.") } ?? "")
+            Button("바꾸기") {
+                let name = browser.renameText
+                Task { await browser.rename(item, to: name) }
+            }
+            Button("취소", role: .cancel) {}
+        } message: { item in
+            Text(String(localized: "‘\(item.name)’의 새 이름을 입력하세요."))
         }
         .alert(deleteTitle, isPresented: Binding(
             get: { browser.pendingDelete != nil },
             set: { if !$0 { browser.pendingDelete = nil } }
-        )) {
-            Button("삭제", role: .destructive) { Task { await browser.confirmDelete() } }
-            Button("취소", role: .cancel) { browser.pendingDelete = nil }
-        } message: {
+        ), presenting: browser.pendingDelete) { items in
+            Button("삭제", role: .destructive) { Task { await browser.delete(items) } }
+            Button("취소", role: .cancel) {}
+        } message: { _ in
             Text("MiSTer에서 바로 지워지고 되돌릴 수 없어요. 폴더는 안에 있는 파일도 함께 지워져요.")
         }
         .alert(conflictTitle, isPresented: Binding(
             get: { browser.pendingConflict != nil },
             set: { if !$0 { browser.pendingConflict = nil } }
-        )) {
-            Button("덮어쓰기", role: .destructive) { browser.resolveConflict(overwrite: true) }
-            Button("건너뛰기") { browser.resolveConflict(overwrite: false) }
-            Button("취소", role: .cancel) { browser.pendingConflict = nil }
-        } message: {
+        ), presenting: browser.pendingConflict) { pending in
+            Button("덮어쓰기", role: .destructive) { browser.resolveConflict(pending, overwrite: true) }
+            Button("건너뛰기") { browser.resolveConflict(pending, overwrite: false) }
+            Button("취소", role: .cancel) {}
+        } message: { _ in
             Text(conflictMessage)
         }
     }
