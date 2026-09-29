@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var password = AppSettings.defaultPassword
     @State private var downloadFolder = URL(fileURLWithPath: NSHomeDirectory())
     @State private var showHidden = false
+    @State private var autoUpdates = true
     @State private var error: String?
 
     var body: some View {
@@ -86,6 +87,31 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.textSoft)
             }
 
+            // "업데이트" alone is also the Update button, so this title has its own key.
+            group(LocalizedStringResource("settings.updates", defaultValue: "업데이트", comment: "Settings section title")) {
+                Toggle("하루에 한 번 GitHub에서 새 버전 확인", isOn: $autoUpdates)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSoft)
+                HStack {
+                    Text(updateStatus)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.text3)
+                    Spacer()
+                    Button("지금 확인") {
+                        dismiss()
+                        // A second sheet can open only after this one has closed.
+                        Task {
+                            try? await Task.sleep(for: .milliseconds(350))
+                            model.updates.checkNow()
+                        }
+                    }
+                    .buttonStyle(SecondaryButtonStyle(height: 28))
+                    .disabled(model.updates.configuration == nil)
+                }
+            }
+
             if let error {
                 Label(error, systemImage: "exclamationmark.circle")
                     .font(.system(size: 12))
@@ -107,6 +133,12 @@ struct SettingsView: View {
         .background(Theme.panel)
         .preferredColorScheme(.dark)
         .onAppear(perform: load)
+    }
+
+    private var updateStatus: String {
+        let version = String(localized: "현재 버전 \(model.updates.currentVersion)")
+        guard let lastCheck = model.updates.lastCheck else { return version }
+        return version + " · " + String(localized: "마지막 확인 \(Format.date(lastCheck))")
     }
 
     private func group<Content: View>(_ title: LocalizedStringResource, @ViewBuilder content: () -> Content) -> some View {
@@ -134,6 +166,7 @@ struct SettingsView: View {
         password = settings.password
         downloadFolder = settings.downloadFolder
         showHidden = settings.showHidden
+        autoUpdates = model.updates.autoCheck
     }
 
     private func chooseFolder() {
@@ -165,6 +198,7 @@ struct SettingsView: View {
         settings.username = trimmedUser.isEmpty ? AppSettings.defaultUser : trimmedUser
         settings.setPassword(password.isEmpty ? AppSettings.defaultPassword : password)
         settings.downloadFolder = downloadFolder
+        if model.updates.autoCheck != autoUpdates { model.updates.autoCheck = autoUpdates }
         if settings.showHidden != showHidden {
             settings.showHidden = showHidden
             model.browser?.rebuild()

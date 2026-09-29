@@ -75,8 +75,23 @@ struct RootView: View {
         .background(model.phase == .connected ? Theme.window : Theme.discovery)
         .ignoresSafeArea()
         .background(WindowConfigurator())
+        .overlay(alignment: .topTrailing) {
+            // Screens without a sidebar show a new version here instead.
+            if model.phase != .connected, let offer = model.updates.bannerOffer, !model.updates.showSheet {
+                // In the title bar row, level with the window buttons.
+                UpdatePill(offer: offer) { model.updates.showSheet = true }
+                    .padding(.top, 12)
+                    .padding(.trailing, 16)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+        }
         .sheet(isPresented: $model.showSettings) {
             SettingsView()
+                .environment(model)
+        }
+        .sheet(isPresented: Bindable(model.updates).showSheet) {
+            UpdateSheet()
                 .environment(model)
         }
         .alert("전송 중인 항목이 있어요", isPresented: $model.confirmRediscover) {
@@ -126,6 +141,9 @@ struct AppCommands: Commands {
     let model: AppModel
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("업데이트 확인…") { model.updates.checkNow() }
+        }
         CommandGroup(replacing: .newItem) {
             Button("올리기…") { model.browser?.uploadWithPanel() }
                 .keyboardShortcut("u")

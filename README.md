@@ -47,6 +47,17 @@ The app is in English and Korean, and it follows your Mac's language: Korean sho
 
 To use a different language for this app only, open System Settings › General › Language & Region, add MiSTer FTP under Applications, and choose a language. The change applies the next time you open the app.
 
+## Updates
+
+After version 1.0.0, the app updates itself. Once a day it asks GitHub whether a new release is out. When there is one, a card appears in the sidebar (on the other screens, a badge at the top right). Click it to read what's new, then click **Update**. The app downloads the new version, checks its signature, replaces itself, and opens again.
+
+- To check now, choose **MiSTer FTP › Check for Updates…**.
+- To stop the daily check, turn it off in Settings (⌘,).
+- The app installs only files signed with this project's release key. It refuses a file that was changed on GitHub or on the way.
+- While files are transferring, the update waits until the transfers finish.
+- Version 1.0.0 can't update itself. Install the next version by hand once, as described in [Install](#install).
+- After an update, macOS may ask again to let the app use the local network. Click **Allow**.
+
 ## How it finds the MiSTer
 
 The app tries three ways at the same time and connects to the first one that answers:
@@ -70,6 +81,7 @@ swift test                         # unit tests
 MISTER_FTP_TEST_HOST=192.168.1.11 swift test --filter LiveMiSTerTests   # tests against a real MiSTer
 swift scripts/make_icon.swift      # draw the app icon again (Resources/AppIcon.icns)
 ./scripts/sync_strings.sh          # collect UI strings into Resources/Localizable.xcstrings
+swift scripts/update_signing.swift check   # the release key in the keychain matches Info.plist
 ```
 
 The live tests write only to `/tmp` on the MiSTer (RAM) and remove their files at the end. They never write to the SD card.
@@ -82,7 +94,7 @@ Debug builds can tour the main screens and save window snapshots as PNG files. T
 swift build && MISTERFTP_SNAPSHOT_DIR=/tmp/misterftp-shots MISTERFTP_DEMO=1 .build/debug/MiSTerFTP
 ```
 
-`MISTERFTP_DEMO=dialogs` presses the real buttons in the Delete, Rename, New Folder and Replace dialogs, then checks the result on the MiSTer. It also works only under `/tmp`.
+`MISTERFTP_DEMO=dialogs` presses the real buttons in the Delete, Rename, New Folder and Replace dialogs, then checks the result on the MiSTer. It also works only under `/tmp`. `MISTERFTP_DEMO=updateui` shows the update screens without the network (run it from an app bundle, so the app has a version number).
 
 ```sh
 swift build && MISTERFTP_DEMO=dialogs .build/debug/MiSTerFTP
@@ -95,13 +107,30 @@ for c in Resources/*.xcstrings; do xcrun xcstringstool compile "$c" -o "$(swift 
 .build/debug/MiSTerFTP -AppleLanguages '(en)'
 ```
 
+## Release a new version
+
+The updater installs only archives signed with the release key. The private key stays in the login keychain of the Mac that makes releases (item "MiSTer FTP update signing key"). `Resources/Info.plist` carries the matching public key (`MFTPUpdatePublicKey`) and the repository to check (`MFTPUpdateRepository`).
+
+1. Once per Mac, run `swift scripts/update_signing.swift generate`. If the key already exists, the command only writes its public key to Info.plist. Back up the keychain item. Without it, installed copies can't update themselves, and everyone has to download the next version by hand.
+2. Set the new version in `Resources/Info.plist`: `CFBundleShortVersionString`, and a higher `CFBundleVersion`.
+3. Run `./scripts/build_app.sh --zip`. It makes `dist/MiSTer-FTP-<version>.zip` and its signature, `dist/MiSTer-FTP-<version>.zip.sig`.
+4. Publish both files in a release tagged `v<version>`. The app shows the release notes (Markdown) in its update window.
+
+```sh
+gh release create v1.0.1 dist/MiSTer-FTP-1.0.1.zip dist/MiSTer-FTP-1.0.1.zip.sig --title "MiSTer FTP 1.0.1" --notes-file NOTES.md
+```
+
+The app reads `releases/latest`, so drafts and pre-releases are never offered.
+
 ## Project layout
 
 ```text
 Sources/FTPKit/      FTP client (POSIX sockets, passive mode, MLSD), list parser, LAN discovery
-Sources/MiSTerFTP/   SwiftUI app: discovery screen, file browser, transfer queue, settings
+Sources/UpdateKit/   updater: GitHub release feed, Ed25519 signature check, download and app swap
+Sources/MiSTerFTP/   SwiftUI app: discovery screen, file browser, transfer queue, settings, updates
 Tests/FTPKitTests/   parser tests and live MiSTer tests
-scripts/             app bundle build and install, app icon, string sync
+Tests/UpdateKitTests/ updater tests with signed test apps
+scripts/             app bundle build and install, release signing, app icon, string sync
 Resources/           Info.plist, AppIcon.icns, string catalogs (Localizable, InfoPlist)
 docs/                README screenshots
 ```

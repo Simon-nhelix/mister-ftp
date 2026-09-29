@@ -49,6 +49,7 @@ struct DeviceInfo {
 final class AppModel {
     let settings = AppSettings()
     let transfers = TransferQueue()
+    let updates = UpdateModel()
 
     private(set) var phase: Phase = .discovering
     private(set) var discovery = DiscoveryState()
@@ -76,13 +77,22 @@ final class AppModel {
         transfers.onRemoteDirectoryChanged = { [weak self] directory in
             self?.browser?.scheduleRefresh(of: directory)
         }
+        updates.isBusy = { [weak self] in self?.transfers.isBusy ?? false }
         resetForm()
     }
 
     func start() {
         guard !started else { return }
         started = true
+        #if DEBUG
+        // Update tests launched through Launch Services stay off the local network.
+        if ProcessInfo.processInfo.environment["MISTERFTP_NO_DISCOVERY"] == "1" {
+            updates.start()
+            return
+        }
+        #endif
         startDiscovery()
+        updates.start()
     }
 
     // MARK: Discovery

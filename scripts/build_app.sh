@@ -2,7 +2,8 @@
 # Builds "MiSTer FTP.app" for Apple silicon and Intel into ./dist.
 #   --install  copies it to /Applications instead (the staging copy is removed,
 #              so Spotlight and Launchpad list the app only once)
-#   --zip      also packs it as dist/MiSTer-FTP-<version>.zip for a GitHub release
+#   --zip      also packs it as dist/MiSTer-FTP-<version>.zip for a GitHub release and
+#              signs it (dist/MiSTer-FTP-<version>.zip.sig) for the in-app updater
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -42,6 +43,11 @@ if [ "$MODE" = "--zip" ]; then
   # ditto keeps the signature, symlinks and extended attributes of the bundle.
   ditto -c -k --keepParent "$APP" "$ZIP"
   echo "Packed $ZIP"
+  # Installed apps update only from archives signed with the key in the keychain.
+  swift scripts/update_signing.swift sign "$ZIP"
+  echo
+  echo "Upload both files to a release tagged v${VERSION}, for example:"
+  echo "  gh release create v${VERSION} \"$ZIP\" \"$ZIP.sig\" --title \"MiSTer FTP ${VERSION}\" --notes-file NOTES.md"
 fi
 
 if [ "$MODE" = "--install" ]; then

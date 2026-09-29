@@ -114,6 +114,11 @@ private struct SidebarView: View {
             }
             .scrollIndicators(.never)
 
+            if let offer = model.updates.bannerOffer, !model.updates.showSheet {
+                UpdateBanner(offer: offer) { model.updates.showSheet = true }
+                    .transition(.opacity)
+            }
+
             HStack(spacing: 8) {
                 Button {
                     model.requestRediscover()

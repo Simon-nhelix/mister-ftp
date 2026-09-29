@@ -2,6 +2,7 @@
 import AppKit
 import SwiftUI
 import FTPKit
+import UpdateKit
 
 /// Debug builds only. Drives the UI through its main states and saves window
 /// snapshots, so the design can be checked without screen-recording permission.
@@ -38,6 +39,8 @@ enum DebugHarness {
         case "1": Task { await tour(model) }
         case "notfound": Task { await notFoundTour(model) }
         case "dialogs": Task { await dialogTour(model) }
+        case "update": Task { await updateTour(model) }
+        case "updateui": Task { await updateScreensTour(model) }
         default: break
         }
     }
@@ -360,6 +363,78 @@ extension DebugHarness {
         try? await browser.session.perform { try $0.deleteRecursively(folder) }
         try? FileManager.default.removeItem(at: local)
         print("cleanup: remote folder \(await exists(base) ? "still exists" : "removed")")
+        fflush(stdout)
+        exit(0)
+    }
+
+    /// MISTERFTP_DEMO=update: checks the feed in Info.plist (MFTPUpdateAPIURL) and installs
+    /// what it finds. On success the app quits by itself, as it does for a person.
+    static func updateTour(_ model: AppModel) async {
+        let updates = model.updates
+        // Apps opened with `open` have no terminal, so results also go to a file.
+        func record(_ line: String) {
+            print(line)
+            fflush(stdout)
+            if let path = environment["MISTERFTP_RESULT_FILE"] {
+                let old = (try? String(contentsOfFile: path, encoding: .utf8)) ?? ""
+                try? (old + line + "\n").write(toFile: path, atomically: true, encoding: .utf8)
+            }
+        }
+        record("update configured: \(updates.configuration != nil) at \(Bundle.main.bundlePath)")
+        await updates.check(userInitiated: true)
+        record("update state after check: \(updates.state)")
+        guard case .available(let offer) = updates.state else { exit(2) }
+        updates.showSheet = true
+        await sleep(0.6)
+        capture("30-update-available")
+        updates.install(offer)
+        for _ in 0..<150 {
+            await sleep(0.1)
+            if case .failed(let message, _) = updates.state {
+                record("update failed: \(message)")
+                capture("31-update-failed")
+                exit(3)
+            }
+            if case .installing = updates.state { record("update installing") }
+        }
+        record("update did not finish")
+        exit(4)
+    }
+
+    /// MISTERFTP_DEMO=updateui: snapshots of the update states, without the network.
+    static func updateScreensTour(_ model: AppModel) async {
+        let updates = model.updates
+        let offer = UpdateOffer(
+            version: AppVersion("1.0.1")!, title: "MiSTer FTP 1.0.1",
+            notes: "- **Delete** and **Rename** work again after you confirm.\n- The app can now update itself. It checks GitHub once a day, and you can turn this off in Settings.\n- [All releases](https://github.com/Simon-nhelix/mister-ftp/releases)",
+            pageURL: URL(string: "https://github.com/Simon-nhelix/mister-ftp/releases/tag/v1.0.1")!,
+            archiveURL: URL(string: "https://example.invalid/MiSTer-FTP-1.0.1.zip")!, archiveSize: 2_200_000,
+            signatureURL: URL(string: "https://example.invalid/MiSTer-FTP-1.0.1.zip.sig")!)
+        await sleep(0.3)
+        updates.debugShow(.available(offer))
+        await sleep(0.4)
+        capture("40-discovery-pill")
+        for _ in 0..<100 where model.phase != .connected { await sleep(0.1) }
+        await sleep(0.8)
+        capture("41-sidebar-banner")
+        updates.showSheet = true
+        await sleep(0.7)
+        capture("42-sheet-available")
+        updates.debugShow(.downloading(offer, received: 1_150_000, total: 2_200_000))
+        await sleep(0.3)
+        capture("43-sheet-downloading")
+        updates.debugShow(.failed(UpdateError.badSignature.localizedDescription, offer))
+        await sleep(0.3)
+        capture("44-sheet-failed")
+        updates.debugShow(.upToDate)
+        await sleep(0.3)
+        capture("45-sheet-up-to-date")
+        updates.showSheet = false
+        model.showSettings = true
+        await sleep(0.7)
+        capture("46-settings")
+        model.showSettings = false
+        await sleep(0.4)
         fflush(stdout)
         exit(0)
     }

@@ -12,13 +12,13 @@
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.simon-nhelix.misterftp</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
 		<string>ko</string>
 	</array>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>MiSTer FTP</string>
 	<key>CFBundlePackageType</key>
@@ -31,6 +31,10 @@
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
+	<key>MFTPUpdatePublicKey</key>
+	<string>nL6WN0rz5qwEi9g0Vu7SkKw0fvkIMTIvHpaYpV24mYQ=</string>
+	<key>MFTPUpdateRepository</key>
+	<string>Simon-nhelix/mister-ftp</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

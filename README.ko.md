@@ -47,6 +47,17 @@ xattr -dr com.apple.quarantine "/Applications/MiSTer FTP.app"
 
 이 앱만 다른 언어로 보려면 시스템 설정 › 일반 › 언어 및 지역 › 응용 프로그램에서 MiSTer FTP를 추가하고 언어를 고르세요. 앱을 다시 열면 바뀝니다.
 
+## 업데이트
+
+1.0.0 다음 버전부터 앱이 스스로 업데이트합니다. 하루에 한 번 GitHub에 새 릴리스가 있는지 확인합니다. 새 버전이 있으면 사이드바에 카드가 보입니다(다른 화면에서는 오른쪽 위 배지). 눌러서 새로운 점을 읽고 **업데이트**를 누르세요. 앱이 새 버전을 받아 서명을 확인하고, 스스로 바꾼 뒤 다시 열립니다.
+
+- 바로 확인하려면 **MiSTer FTP › 업데이트 확인…**을 고르세요.
+- 매일 확인을 끄려면 설정(⌘,)에서 끄세요.
+- 이 프로젝트의 릴리스 키로 서명한 파일만 설치합니다. GitHub에서나 받는 도중에 바뀐 파일은 거부합니다.
+- 파일을 전송하는 중에는 전송이 끝날 때까지 기다립니다.
+- 1.0.0은 스스로 업데이트하지 못합니다. 다음 버전을 [설치](#설치) 방법대로 한 번만 직접 설치하세요.
+- 업데이트 뒤에 macOS가 로컬 네트워크 사용을 다시 물을 수 있습니다. **허용**을 누르세요.
+
 ## MiSTer를 찾는 방법
 
 세 가지를 동시에 합니다. 먼저 찾은 쪽으로 연결합니다.
@@ -70,6 +81,7 @@ swift test                         # 단위 테스트
 MISTER_FTP_TEST_HOST=192.168.1.11 swift test --filter LiveMiSTerTests   # 실제 MiSTer 테스트
 swift scripts/make_icon.swift      # 앱 아이콘(Resources/AppIcon.icns) 다시 만들기
 ./scripts/sync_strings.sh          # 코드의 화면 문구를 Resources/Localizable.xcstrings에 반영
+swift scripts/update_signing.swift check   # 키체인의 릴리스 키가 Info.plist와 맞는지 확인
 ```
 
 실제 MiSTer 테스트는 MiSTer의 `/tmp`(RAM)에만 쓰고, 끝나면 지웁니다. SD 카드에는 쓰지 않습니다.
@@ -82,7 +94,7 @@ swift scripts/make_icon.swift      # 앱 아이콘(Resources/AppIcon.icns) 다�
 swift build && MISTERFTP_SNAPSHOT_DIR=/tmp/misterftp-shots MISTERFTP_DEMO=1 .build/debug/MiSTerFTP
 ```
 
-`MISTERFTP_DEMO=dialogs`는 삭제·이름 바꾸기·새 폴더·덮어쓰기 확인창의 실제 버튼을 누르고, MiSTer에서 결과를 확인합니다. 이것도 `/tmp`에서만 작업합니다.
+`MISTERFTP_DEMO=dialogs`는 삭제·이름 바꾸기·새 폴더·덮어쓰기 확인창의 실제 버튼을 누르고, MiSTer에서 결과를 확인합니다. 이것도 `/tmp`에서만 작업합니다. `MISTERFTP_DEMO=updateui`는 네트워크 없이 업데이트 화면들을 보여 줍니다(버전 번호가 있도록 앱 번들 안에서 실행하세요).
 
 ```sh
 swift build && MISTERFTP_DEMO=dialogs .build/debug/MiSTerFTP
@@ -95,13 +107,30 @@ for c in Resources/*.xcstrings; do xcrun xcstringstool compile "$c" -o "$(swift 
 .build/debug/MiSTerFTP -AppleLanguages '(en)'
 ```
 
+## 새 버전 릴리스
+
+업데이트 기능은 릴리스 키로 서명한 압축 파일만 설치합니다. 비밀 키는 릴리스를 만드는 Mac의 로그인 키체인에만 있습니다(항목 이름 "MiSTer FTP update signing key"). `Resources/Info.plist`에는 짝이 되는 공개 키(`MFTPUpdatePublicKey`)와 확인할 저장소(`MFTPUpdateRepository`)가 들어 있습니다.
+
+1. Mac마다 한 번 `swift scripts/update_signing.swift generate`를 실행합니다. 키가 이미 있으면 공개 키만 Info.plist에 씁니다. 키체인 항목은 꼭 백업하세요. 키를 잃으면 설치된 앱이 스스로 업데이트할 수 없고, 모두가 다음 버전을 직접 받아야 합니다.
+2. `Resources/Info.plist`에서 새 버전을 정합니다: `CFBundleShortVersionString`, 그리고 더 큰 `CFBundleVersion`.
+3. `./scripts/build_app.sh --zip`을 실행합니다. `dist/MiSTer-FTP-<버전>.zip`과 서명 파일 `dist/MiSTer-FTP-<버전>.zip.sig`가 생깁니다.
+4. 두 파일을 태그가 `v<버전>`인 릴리스에 올립니다. 릴리스 설명(Markdown)은 앱의 업데이트 창에 그대로 보입니다.
+
+```sh
+gh release create v1.0.1 dist/MiSTer-FTP-1.0.1.zip dist/MiSTer-FTP-1.0.1.zip.sig --title "MiSTer FTP 1.0.1" --notes-file NOTES.md
+```
+
+앱은 `releases/latest`를 보므로 초안(draft)과 시험판(pre-release)은 안내하지 않습니다.
+
 ## 구조
 
 ```text
 Sources/FTPKit/      FTP 클라이언트(POSIX 소켓, 패시브 모드, MLSD), 목록 파서, LAN 탐색
-Sources/MiSTerFTP/   SwiftUI 앱: 탐색 화면, 파일 목록, 전송 대기열, 설정
+Sources/UpdateKit/   업데이트: GitHub 릴리스 확인, Ed25519 서명 확인, 받기와 앱 교체
+Sources/MiSTerFTP/   SwiftUI 앱: 탐색 화면, 파일 목록, 전송 대기열, 설정, 업데이트
 Tests/FTPKitTests/   파서 테스트와 실제 MiSTer 테스트
-scripts/             앱 번들 빌드·설치, 아이콘 생성, 화면 문구 동기화
+Tests/UpdateKitTests/ 서명한 테스트 앱으로 하는 업데이트 테스트
+scripts/             앱 번들 빌드·설치, 릴리스 서명, 아이콘 생성, 화면 문구 동기화
 Resources/           Info.plist, AppIcon.icns, 문자열 카탈로그(Localizable, InfoPlist)
 docs/                README 스크린샷
 ```

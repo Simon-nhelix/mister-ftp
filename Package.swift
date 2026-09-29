@@ -10,9 +10,12 @@ let package = Package(
     targets: [
         // FTP client, list parsing and LAN discovery. No UI code.
         .target(name: "FTPKit"),
+        // Finds, checks and installs new releases from GitHub. No UI code.
+        .target(name: "UpdateKit"),
         // The SwiftUI app.
-        .executableTarget(name: "MiSTerFTP", dependencies: ["FTPKit"]),
+        .executableTarget(name: "MiSTerFTP", dependencies: ["FTPKit", "UpdateKit"]),
         .testTarget(name: "FTPKitTests", dependencies: ["FTPKit"]),
+        .testTarget(name: "UpdateKitTests", dependencies: ["UpdateKit"]),
     ],
     swiftLanguageModes: [.v5]
 )
