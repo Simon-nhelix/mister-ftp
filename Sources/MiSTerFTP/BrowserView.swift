@@ -58,6 +58,19 @@ struct BrowserView: View {
         } message: { _ in
             Text("MiSTer에서 바로 지워지고 되돌릴 수 없어요. 폴더는 안에 있는 파일도 함께 지워져요.")
         }
+        .alert("즐겨찾기 이름", isPresented: Binding(
+            get: { browser.pendingFavoriteRename != nil },
+            set: { if !$0 { browser.pendingFavoriteRename = nil } }
+        ), presenting: browser.pendingFavoriteRename) { place in
+            TextField("사이드바에 보일 이름", text: $browser.favoriteRenameText)
+            Button("바꾸기") {
+                let title = browser.favoriteRenameText
+                browser.renameFavorite(place, to: title)
+            }
+            Button("취소", role: .cancel) {}
+        } message: { _ in
+            Text("비워 두면 폴더 경로로 이름을 만들어요.")
+        }
         .alert(conflictTitle, isPresented: Binding(
             get: { browser.pendingConflict != nil },
             set: { if !$0 { browser.pendingConflict = nil } }
@@ -107,8 +120,11 @@ private struct SidebarView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     section("저장소", places: browser.storages)
-                    if !browser.shortcuts.isEmpty {
-                        section("바로가기", places: browser.shortcuts)
+                    if !browser.favorites.isEmpty {
+                        section("즐겨찾기", places: browser.favorites)
+                    }
+                    if !autoShortcuts.isEmpty {
+                        section("바로가기", places: autoShortcuts)
                     }
                 }
             }
@@ -148,13 +164,21 @@ private struct SidebarView: View {
         .overlay(alignment: .top) { DragStrip() }
     }
 
-    private var currentPlace: String? {
+    /// Auto-detected folders, without the ones the user already pinned above.
+    private var autoShortcuts: [Place] {
+        let pinned = Set(browser.favorites.map(\.path))
+        return browser.shortcuts.filter { !pinned.contains($0.path) }
+    }
+
+    /// The one row to highlight: the deepest place the open folder sits in.
+    /// A pinned row wins over a storage row that points at the same folder.
+    private var currentPlace: Place? {
         let path = browser.path
-        let all = browser.shortcuts + browser.storages
-        return all
+        let matches = (browser.favorites + autoShortcuts + browser.storages)
             .filter { path == $0.path || path.hasPrefix($0.path + "/") }
-            .max { $0.path.count < $1.path.count }?
-            .path
+        guard let depth = matches.map(\.path.count).max() else { return nil }
+        let deepest = matches.filter { $0.path.count == depth }
+        return deepest.first { $0.kind == .favorite } ?? deepest.first
     }
 
     private func section(_ title: LocalizedStringKey, places: [Place]) -> some View {
@@ -165,10 +189,26 @@ private struct SidebarView: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 4)
             ForEach(places) { place in
-                SidebarRow(place: place, selected: place.path == currentPlace) {
+                SidebarRow(place: place, selected: place == currentPlace) {
                     Task { await browser.open(place.path) }
                 }
+                .contextMenu { placeMenu(place) }
             }
+        }
+    }
+
+    @ViewBuilder private func placeMenu(_ place: Place) -> some View {
+        if place.kind == .favorite {
+            Button("이름 바꾸기…") { browser.beginFavoriteRename(place) }
+            Divider()
+            Button("위로 이동") { browser.moveFavorite(place, by: -1) }
+                .disabled(!browser.canMoveFavorite(place, by: -1))
+            Button("아래로 이동") { browser.moveFavorite(place, by: 1) }
+                .disabled(!browser.canMoveFavorite(place, by: 1))
+            Divider()
+            Button("즐겨찾기에서 제거", role: .destructive) { browser.removeFavorite(place) }
+        } else {
+            Button("즐겨찾기에 추가") { browser.addFavorite(place) }
         }
     }
 }
@@ -227,11 +267,13 @@ private struct SidebarRow: View {
             HStack(spacing: 10) {
                 Image(systemName: place.symbol)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(selected ? Theme.amber : Theme.text3)
+                    .foregroundStyle(selected || place.kind == .favorite ? Theme.amber : Theme.text3)
                     .frame(width: 18)
                 Text(place.title)
                     .font(.system(size: 13))
                     .foregroundStyle(selected ? Theme.text : Theme.textSoft)
+                    .lineLimit(1)
+                    .truncationMode(place.kind == .favorite ? .head : .tail)
                 Spacer(minLength: 4)
                 if let detail = place.detail {
                     Text(detail)
@@ -249,6 +291,7 @@ private struct SidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .help(place.kind == .favorite ? place.path : "")
     }
 }
 
@@ -303,6 +346,15 @@ private struct BrowserHeader: View {
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.field))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(searchFocused ? Theme.amber.opacity(0.8) : Theme.fieldBorder))
             .background(Button("") { searchFocused = true }.keyboardShortcut("f").hidden())
+
+            Button { browser.toggleFavorite() } label: {
+                Image(systemName: browser.isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(browser.isFavorite ? Theme.amber : Theme.icon)
+            }
+            .buttonStyle(IconButtonStyle(size: 30))
+            .help(browser.isFavorite ? "이 폴더를 즐겨찾기에서 빼요 (⌘B)" : "이 폴더를 즐겨찾기에 넣어요 (⌘B)")
+            .accessibilityLabel(browser.isFavorite ? "즐겨찾기에서 제거" : "즐겨찾기에 추가")
 
             Button { browser.beginNewFolder() } label: {
                 Image(systemName: "folder.badge.plus").font(.system(size: 14, weight: .medium))
@@ -534,6 +586,11 @@ private struct FileListView: View {
             Button("열기") { Task { await browser.open(item.path) } }
             Divider()
         }
+        if !many && item.isDirectory {
+            Button("즐겨찾기에 추가") { browser.addFavorite(item) }
+                .disabled(model.settings.isFavorite(item.path))
+            Divider()
+        }
         Button(many ? String(localized: "항목 \(targets.count)개 받기") : String(localized: "받기")) { browser.download(targets) }
         Button("다른 위치에 받기…") { browser.downloadWithPanel(targets) }
         Divider()
@@ -550,6 +607,8 @@ private struct FileListView: View {
     @ViewBuilder private var backgroundMenu: some View {
         Button("새 폴더…") { browser.beginNewFolder() }
         Button("올리기…") { browser.uploadWithPanel() }
+        Divider()
+        Button(browser.isFavorite ? "즐겨찾기에서 제거" : "즐겨찾기에 추가") { browser.toggleFavorite() }
         Divider()
         Button("새로 고침") { Task { await browser.refresh() } }
         Button(model.settings.showHidden ? "숨김 파일 가리기" : "숨김 파일 보기") {

@@ -2,6 +2,15 @@ import Foundation
 import Security
 import FTPKit
 
+/// A folder the user pinned to the sidebar.
+struct Favorite: Codable, Hashable, Identifiable {
+    var path: String
+    /// Set only when the user typed their own name for the row; otherwise the path makes the name.
+    var customTitle: String?
+
+    var id: String { path }
+}
+
 /// Connection and display preferences.
 /// The password lives in the Keychain, and only when it is not the MiSTer default.
 @MainActor @Observable
@@ -19,6 +28,8 @@ final class AppSettings {
     var showHidden: Bool { didSet { defaults.set(showHidden, forKey: "showHidden") } }
     var downloadFolder: URL { didSet { defaults.set(downloadFolder.path, forKey: "downloadFolder") } }
     private(set) var password: String
+    /// Pinned folders, in the order the user put them in.
+    private(set) var favorites: [Favorite] = []
 
     init() {
         fixedHost = defaults.string(forKey: "fixedHost") ?? ""
@@ -34,6 +45,7 @@ final class AppSettings {
                 ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Downloads")
         }
         password = Keychain.read() ?? Self.defaultPassword
+        favorites = Self.readFavorites(from: defaults)
     }
 
     func setPassword(_ value: String) {
@@ -47,6 +59,79 @@ final class AppSettings {
 
     func credentials(host: String) -> FTPCredentials {
         FTPCredentials(host: host, port: UInt16(port), username: username, password: password)
+    }
+
+    // MARK: Favorites
+
+    func isFavorite(_ path: String) -> Bool {
+        favorites.contains { $0.path == RemotePath.normalize(path) }
+    }
+
+    func addFavorite(path rawPath: String) {
+        let path = RemotePath.normalize(rawPath)
+        guard !favorites.contains(where: { $0.path == path }) else { return }
+        favorites.append(Favorite(path: path, customTitle: nil))
+        storeFavorites()
+    }
+
+    func removeFavorite(path rawPath: String) {
+        let path = RemotePath.normalize(rawPath)
+        guard favorites.contains(where: { $0.path == path }) else { return }
+        favorites.removeAll { $0.path == path }
+        storeFavorites()
+    }
+
+    /// An empty or blank name goes back to the name made from the path.
+    func setFavoriteTitle(_ title: String?, path rawPath: String) {
+        let path = RemotePath.normalize(rawPath)
+        guard let index = favorites.firstIndex(where: { $0.path == path }) else { return }
+        let trimmed = title?.trimmingCharacters(in: .whitespaces) ?? ""
+        favorites[index].customTitle = trimmed.isEmpty ? nil : trimmed
+        storeFavorites()
+    }
+
+    /// Moves a favorite one row up (-1) or down (+1).
+    func moveFavorite(path rawPath: String, by offset: Int) {
+        let path = RemotePath.normalize(rawPath)
+        guard let index = favorites.firstIndex(where: { $0.path == path }) else { return }
+        let target = index + offset
+        guard favorites.indices.contains(target) else { return }
+        favorites.swapAt(index, target)
+        storeFavorites()
+    }
+
+    /// Follows a renamed folder, so a pinned row keeps working.
+    func relocateFavorites(from oldPath: String, to newPath: String) {
+        let old = RemotePath.normalize(oldPath)
+        let new = RemotePath.normalize(newPath)
+        guard old != new else { return }
+        var moved = false
+        for index in favorites.indices where favorites[index].path == old || favorites[index].path.hasPrefix(old + "/") {
+            favorites[index].path = new + String(favorites[index].path.dropFirst(old.count))
+            moved = true
+        }
+        if moved { storeFavorites() }
+    }
+
+    /// Drops rows that point at a deleted folder or anything inside it.
+    func dropFavorites(under rawPath: String) {
+        let path = RemotePath.normalize(rawPath)
+        let before = favorites.count
+        favorites.removeAll { $0.path == path || $0.path.hasPrefix(path + "/") }
+        if favorites.count != before { storeFavorites() }
+    }
+
+    private func storeFavorites() {
+        guard let data = try? JSONEncoder().encode(favorites) else { return }
+        defaults.set(data, forKey: "favorites")
+    }
+
+    private static func readFavorites(from defaults: UserDefaults) -> [Favorite] {
+        guard let data = defaults.data(forKey: "favorites"),
+              let saved = try? JSONDecoder().decode([Favorite].self, from: data) else { return [] }
+        // Old files could hold the same path twice; the sidebar needs unique ids.
+        var seen = Set<String>()
+        return saved.filter { seen.insert($0.path).inserted }
     }
 
     /// Addresses to try before scanning the network.

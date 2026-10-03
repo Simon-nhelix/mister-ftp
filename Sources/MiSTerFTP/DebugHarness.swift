@@ -10,6 +10,7 @@ import UpdateKit
 ///   MISTERFTP_SNAPSHOT_DIR=/path  where PNG files go
 ///   MISTERFTP_DEMO=1              run the scripted tour, then quit
 ///   MISTERFTP_DEMO=dialogs        press the real dialog buttons and check the results
+///   MISTERFTP_DEMO=favorites      pin, rename, reorder and unpin sidebar favorites
 ///
 /// The tour writes only under /tmp on the MiSTer (RAM) and removes it again.
 @MainActor
@@ -39,6 +40,7 @@ enum DebugHarness {
         case "1": Task { await tour(model) }
         case "notfound": Task { await notFoundTour(model) }
         case "dialogs": Task { await dialogTour(model) }
+        case "favorites": Task { await favoritesTour(model) }
         case "update": Task { await updateTour(model) }
         case "updateui": Task { await updateScreensTour(model) }
         default: break
@@ -435,6 +437,135 @@ extension DebugHarness {
         capture("46-settings")
         model.showSettings = false
         await sleep(0.4)
+        fflush(stdout)
+        exit(0)
+    }
+
+    /// MISTERFTP_DEMO=favorites: pins real folders, then checks the sidebar, the
+    /// saved preference and what happens when a pinned folder is renamed or deleted.
+    /// The favorites the user already had are put back before it quits.
+    static func favoritesTour(_ model: AppModel) async {
+        for _ in 0..<100 where model.phase != .connected { await sleep(0.1) }
+        guard let browser = model.browser else {
+            print("favorites check: not connected")
+            exit(1)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        let settings = model.settings
+        let original = settings.favorites
+        let base = "/tmp/misterftp-favorites"
+        let local = FileManager.default.temporaryDirectory.appendingPathComponent("misterftp-favorites-note.txt")
+        FileManager.default.createFile(atPath: local.path, contents: Data("favorites test\n".utf8))
+        do {
+            try await browser.session.perform { connection in
+                try connection.ensureDirectory(base)
+                try connection.ensureDirectory(base + "/Alpha")
+                try connection.ensureDirectory(base + "/Beta")
+                try connection.upload(local, to: base + "/note.txt") { _ in }
+            }
+        } catch {
+            print("favorites check setup failed: \(error)")
+            exit(1)
+        }
+
+        func report(_ label: String, _ ok: Bool) {
+            print("favorites check \(label): \(ok ? "PASS" : "FAIL")")
+            fflush(stdout)
+        }
+        /// Reads the preference file the way a fresh launch would.
+        func savedPaths() -> [String] {
+            guard let data = UserDefaults.standard.data(forKey: "favorites"),
+                  let saved = try? JSONDecoder().decode([Favorite].self, from: data) else { return [] }
+            return saved.map(\.path)
+        }
+        func exists(_ path: String) async -> Bool {
+            let found = try? await browser.session.perform { try $0.stat(path) }
+            return (found ?? nil) != nil
+        }
+
+        // Start from a clean list, so the checks below do not depend on what was saved before.
+        for favorite in original { settings.removeFavorite(path: favorite.path) }
+
+        await browser.open(base + "/Alpha")
+        report("open folder is not pinned yet", !browser.isFavorite)
+        browser.toggleFavorite()
+        report("pinning the open folder", browser.isFavorite && browser.favorites.map(\.path) == [base + "/Alpha"])
+        report("pinning is written to preferences", savedPaths() == [base + "/Alpha"])
+        report("row name comes from the path", browser.favorites.first?.title == Places.shortLabel(base + "/Alpha"))
+
+        await browser.open(base)
+        if let beta = browser.visibleItems.first(where: { $0.name == "Beta" }) {
+            browser.addFavorite(beta)
+        }
+        report("pinning a folder from the list", browser.favorites.map(\.path) == [base + "/Alpha", base + "/Beta"])
+        if let file = browser.visibleItems.first(where: { !$0.isDirectory }) {
+            browser.addFavorite(file)
+            report("a file cannot be pinned", browser.favorites.count == 2)
+        }
+
+        guard let beta = browser.favorites.last else {
+            report("second favorite is there", false)
+            exit(1)
+        }
+        report("the last row cannot move down", !browser.canMoveFavorite(beta, by: 1))
+        browser.moveFavorite(beta, by: -1)
+        report("moving a row up", browser.favorites.map(\.path) == [base + "/Beta", base + "/Alpha"])
+        report("the new order is saved", savedPaths() == [base + "/Beta", base + "/Alpha"])
+
+        await browser.open(base + "/Alpha")
+        await sleep(0.5)
+        capture("50-favorites")
+
+        guard let pinnedBeta = browser.favorites.first else { exit(1) }
+        browser.beginFavoriteRename(pinnedBeta)
+        browser.favoriteRenameText = "내 세이브"
+        await sleep(0.6)
+        report("rename dialog button pressed", pressAlertButton("바꾸기"))
+        await sleep(0.3)
+        report("the row uses the typed name", browser.favorites.first?.title == "내 세이브")
+
+        // A blank name goes back to the name made from the path.
+        if let renamed = browser.favorites.first {
+            browser.renameFavorite(renamed, to: "   ")
+            report("a blank name falls back to the path", browser.favorites.first?.title == Places.shortLabel(base + "/Beta"))
+        }
+
+        // Renaming the folder on the MiSTer should carry the pinned row along.
+        await browser.open(base)
+        if let beta = browser.visibleItems.first(where: { $0.name == "Beta" }) {
+            await browser.rename(beta, to: "Beta2")
+            report("a renamed folder keeps its row", browser.favorites.contains { $0.path == base + "/Beta2" })
+        }
+        // Deleting the folder should drop the row.
+        await browser.refresh()
+        if let beta2 = browser.visibleItems.first(where: { $0.name == "Beta2" }) {
+            await browser.delete([beta2])
+            report("a deleted folder loses its row", !browser.favorites.contains { $0.path == base + "/Beta2" })
+        }
+
+        // A sidebar as a real user would see it, for the screenshot.
+        for favorite in browser.favorites { settings.removeFavorite(path: favorite.path) }
+        for path in ["/media/fat/games/SNES", "/media/fat/games/Genesis", "/media/fat/Scripts"] {
+            if await exists(path) { settings.addFavorite(path: path) }
+        }
+        if let first = browser.favorites.first { settings.setFavoriteTitle("슈퍼패미컴", path: first.path) }
+        await browser.open("/media/fat/games")
+        await sleep(0.7)
+        capture("51-favorites-real")
+        print("sidebar rows: \(browser.favorites.map(\.title))")
+
+        // Put the user's own favorites back.
+        for favorite in browser.favorites { settings.removeFavorite(path: favorite.path) }
+        for favorite in original {
+            settings.addFavorite(path: favorite.path)
+            settings.setFavoriteTitle(favorite.customTitle, path: favorite.path)
+        }
+        report("the original favorites are back", settings.favorites == original)
+
+        let folder = FTPItem(name: "misterftp-favorites", path: base, kind: .directory, size: nil, modified: nil)
+        try? await browser.session.perform { try $0.deleteRecursively(folder) }
+        try? FileManager.default.removeItem(at: local)
+        print("cleanup: remote folder \(await exists(base) ? "still exists" : "removed")")
         fflush(stdout)
         exit(0)
     }

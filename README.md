@@ -34,7 +34,17 @@ xattr -dr com.apple.quarantine "/Applications/MiSTer FTP.app"
 | Download to the Mac | Select items and click **Download** (⌘D), double-click a file, or right-click › Download To… |
 | Open a folder | Double-click or press Return. Enclosing folder: ⌘↑. Back and forward: ⌘[ ⌘] |
 | New folder · Rename · Delete | ⇧⌘N · ⌘E · ⌘⌫ (also in the right-click menu) |
+| Pin or unpin a folder | Open it and click the star in the header, or press ⌘B (also right-click a folder in the list) |
 | Search again · Connect to an address | ⇧⌘R · ⌘K |
+
+### Favorites
+
+You can pin the folders you keep going back to. They gather in a **Favorites** group in the sidebar, under **Storage**.
+
+- To pin: open the folder and click the star in the header, or press ⌘B. You can also right-click a folder in the list.
+- Right-click a row in the sidebar to rename it, move it up or down, or remove it. An empty name goes back to the folder path.
+- Rename a folder inside the app and its pinned row follows. Delete the folder and the row goes away.
+- A pinned folder that is also one of the **Shortcuts** is hidden from that group.
 
 - Downloads go to `~/Downloads`. You can change the folder in Settings (⌘,).
 - Uploads skip macOS junk files such as `.DS_Store` and `._*`. Names are stored in composed Unicode (NFC), and characters that FAT/exFAT can't store (`\ : * ? " < > |`) become `_`.

@@ -3,7 +3,7 @@ import FTPKit
 
 /// A place in the sidebar.
 struct Place: Identifiable, Hashable {
-    enum Kind { case storage, shortcut }
+    enum Kind { case storage, shortcut, favorite }
     var id: String { path }
     let path: String
     let title: String
@@ -51,6 +51,8 @@ final class BrowserModel {
     var renameText = ""
     var isCreatingFolder = false
     var newFolderName = ""
+    var pendingFavoriteRename: Place?
+    var favoriteRenameText = ""
     var pendingConflict: PendingUpload?
 
     struct PendingUpload {
@@ -249,6 +251,54 @@ final class BrowserModel {
         }
     }
 
+    // MARK: Favorites
+
+    /// The folders the user pinned, as sidebar rows.
+    var favorites: [Place] {
+        settings.favorites.map {
+            Place(path: $0.path, title: $0.customTitle ?? Places.shortLabel($0.path), symbol: "star.fill", kind: .favorite)
+        }
+    }
+
+    /// True when the open folder is already pinned.
+    var isFavorite: Bool { settings.isFavorite(path) }
+
+    /// Pins the open folder, or unpins it when it is already there.
+    func toggleFavorite() {
+        if settings.isFavorite(path) {
+            settings.removeFavorite(path: path)
+        } else {
+            settings.addFavorite(path: path)
+        }
+    }
+
+    func addFavorite(_ item: FTPItem) {
+        guard item.isDirectory else { return }
+        settings.addFavorite(path: item.path)
+    }
+
+    func addFavorite(_ place: Place) { settings.addFavorite(path: place.path) }
+
+    func removeFavorite(_ place: Place) { settings.removeFavorite(path: place.path) }
+
+    func moveFavorite(_ place: Place, by offset: Int) { settings.moveFavorite(path: place.path, by: offset) }
+
+    func canMoveFavorite(_ place: Place, by offset: Int) -> Bool {
+        guard let index = settings.favorites.firstIndex(where: { $0.path == place.path }) else { return false }
+        return settings.favorites.indices.contains(index + offset)
+    }
+
+    func beginFavoriteRename(_ place: Place) {
+        favoriteRenameText = place.title
+        pendingFavoriteRename = place
+    }
+
+    /// A blank name goes back to the name made from the path.
+    func renameFavorite(_ place: Place, to title: String) {
+        pendingFavoriteRename = nil
+        settings.setFavoriteTitle(title, path: place.path)
+    }
+
     // MARK: Selection
 
     func click(_ item: FTPItem, modifiers: NSEvent.ModifierFlags) {
@@ -365,7 +415,8 @@ final class BrowserModel {
         let name = newName.trimmingCharacters(in: .whitespaces)
         guard isValidName(name), name != item.name else { return }
         let target = RemotePath.join(RemotePath.parent(of: item.path), UploadPlan.remoteName(name))
-        await run(String(localized: "이름을 바꾸는 중…")) { try $0.rename(item.path, to: target) }
+        let renamed = await run(String(localized: "이름을 바꾸는 중…")) { try $0.rename(item.path, to: target) }
+        if renamed { settings.relocateFavorites(from: item.path, to: target) }
         await refresh()
         selection = [target]
         anchor = target
@@ -374,9 +425,10 @@ final class BrowserModel {
     func delete(_ targets: [FTPItem]) async {
         pendingDelete = nil
         guard !targets.isEmpty else { return }
-        await run(String(localized: "삭제하는 중…")) { connection in
+        let deleted = await run(String(localized: "삭제하는 중…")) { connection in
             for item in targets { try connection.deleteRecursively(item) }
         }
+        if deleted { for item in targets { settings.dropFavorites(under: item.path) } }
         await refresh()
     }
 
@@ -393,14 +445,17 @@ final class BrowserModel {
         return true
     }
 
-    private func run(_ message: String, _ work: @escaping (FTPConnection) throws -> Void) async {
+    @discardableResult
+    private func run(_ message: String, _ work: @escaping (FTPConnection) throws -> Void) async -> Bool {
         busyMessage = message
         defer { busyMessage = nil }
         do {
             try await session.perform(work)
+            return true
         } catch {
             noteFailure(error)
             errorMessage = error.localizedDescription
+            return false
         }
     }
 }

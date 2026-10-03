@@ -179,6 +179,12 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(".", modifiers: [.command, .shift])
             Divider()
+            Button(model.browser?.isFavorite == true ? "즐겨찾기에서 제거" : "즐겨찾기에 추가") {
+                model.browser?.toggleFavorite()
+            }
+            .keyboardShortcut("b")
+            .disabled(model.browser == nil)
+            Divider()
             Button("뒤로") { Task { await model.browser?.goBack() } }
                 .keyboardShortcut("[")
                 .disabled(!(model.browser?.canGoBack ?? false))
