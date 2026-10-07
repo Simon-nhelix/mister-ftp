@@ -65,6 +65,36 @@ final class UpdateKitTests: XCTestCase {
             object["assets"] = (object["assets"] as! [[String: Any]]).filter { !($0["name"] as! String).hasSuffix(".sig") }
         }
         XCTAssertNil(try XCTUnwrap(ReleaseFeed.offer(from: unsigned)).signatureURL)
+
+        // Title fallbacks
+        let noName = try release { $0["name"] = NSNull() }
+        XCTAssertEqual(ReleaseFeed.offer(from: noName)?.title, "v1.0.1")
+
+        let emptyName = try release { $0["name"] = "   \n" }
+        XCTAssertEqual(ReleaseFeed.offer(from: emptyName)?.title, "v1.0.1")
+
+        // Notes fallbacks
+        let noBody = try release { $0["body"] = NSNull() }
+        XCTAssertEqual(ReleaseFeed.offer(from: noBody)?.notes, "")
+
+        let emptyBody = try release { $0["body"] = "   \n" }
+        XCTAssertEqual(ReleaseFeed.offer(from: emptyBody)?.notes, "")
+
+        // Archive fallback: pick any valid zip if the exact match isn't present
+        let otherArchive = try release { object in
+            object["assets"] = [
+                ["name": "MiSTer-FTP-1.0.1-macOS.zip", "size": 100, "browser_download_url": "https://example.com/other.zip"]
+            ]
+        }
+        XCTAssertEqual(ReleaseFeed.offer(from: otherArchive)?.archiveURL.lastPathComponent, "other.zip")
+
+        // Wrong prefix in asset -> ignored
+        let wrongPrefix = try release { object in
+            object["assets"] = [
+                ["name": "Other-FTP-1.0.1.zip", "size": 100, "browser_download_url": "https://example.com/other.zip"]
+            ]
+        }
+        XCTAssertNil(ReleaseFeed.offer(from: wrongPrefix))
     }
 
     func testOnlySafeDownloadAddresses() {
