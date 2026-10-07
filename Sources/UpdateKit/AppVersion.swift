@@ -24,12 +24,7 @@ public struct AppVersion: Comparable, Hashable, Sendable, CustomStringConvertibl
     }
 
     public static func < (lhs: AppVersion, rhs: AppVersion) -> Bool {
-        for index in 0..<max(lhs.numbers.count, rhs.numbers.count) {
-            let left = index < lhs.numbers.count ? lhs.numbers[index] : 0
-            let right = index < rhs.numbers.count ? rhs.numbers[index] : 0
-            if left != right { return left < right }
-        }
-        return false
+        return lhs.numbers.lexicographicallyPrecedes(rhs.numbers)
     }
 
     public static func == (lhs: AppVersion, rhs: AppVersion) -> Bool { lhs.numbers == rhs.numbers }
