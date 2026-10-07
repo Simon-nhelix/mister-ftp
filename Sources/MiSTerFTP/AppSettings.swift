@@ -106,9 +106,13 @@ final class AppSettings {
         let new = RemotePath.normalize(newPath)
         guard old != new else { return }
         var moved = false
-        for index in favorites.indices where favorites[index].path == old || favorites[index].path.hasPrefix(old + "/") {
-            favorites[index].path = new + String(favorites[index].path.dropFirst(old.count))
-            moved = true
+        let oldPrefix = old + "/"
+        for index in favorites.indices {
+            let currentPath = favorites[index].path
+            if currentPath == old || currentPath.hasPrefix(oldPrefix) {
+                favorites[index].path = new + String(currentPath.dropFirst(old.count))
+                moved = true
+            }
         }
         if moved { storeFavorites() }
     }
