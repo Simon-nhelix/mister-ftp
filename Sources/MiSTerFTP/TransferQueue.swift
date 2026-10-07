@@ -319,20 +319,52 @@ final class TransferQueue {
             var files: [(remote: String, local: URL, size: Int64)] = []
             if item.isDirectory {
                 directories.append(target)
-                var stack = [(item.path, target)]
-                while let (remote, local) = stack.popLast() {
-                    try await checkCancel(job)
-                    for child in try await session.perform({ try $0.list(remote) }) {
-                        let childURL = local.appendingPathComponent(child.name)
-                        switch child.kind {
-                        case .directory:
-                            directories.append(childURL)
-                            stack.append((child.path, childURL))
-                        case .file:
-                            files.append((child.path, childURL, child.size ?? 0))
-                        case .link:
-                            continue
+
+                typealias TaskResult = (directories: [(remote: String, local: URL)], files: [(remote: String, local: URL, size: Int64)])
+
+                try await withThrowingTaskGroup(of: TaskResult.self) { group in
+                    group.addTask {
+                        var childDirectories: [(remote: String, local: URL)] = []
+                        var childFiles: [(remote: String, local: URL, size: Int64)] = []
+
+                        try await checkCancel(job)
+                        for child in try await session.perform({ try $0.list(item.path) }) {
+                            let childURL = target.appendingPathComponent(child.name)
+                            switch child.kind {
+                            case .directory:
+                                childDirectories.append((child.path, childURL))
+                            case .file:
+                                childFiles.append((child.path, childURL, child.size ?? 0))
+                            case .link:
+                                continue
+                            }
                         }
+                        return (childDirectories, childFiles)
+                    }
+
+                    while let result = try await group.next() {
+                        for dir in result.directories {
+                            directories.append(dir.local)
+                            group.addTask {
+                                var childDirectories: [(remote: String, local: URL)] = []
+                                var childFiles: [(remote: String, local: URL, size: Int64)] = []
+
+                                try await checkCancel(job)
+                                for child in try await session.perform({ try $0.list(dir.remote) }) {
+                                    let childURL = dir.local.appendingPathComponent(child.name)
+                                    switch child.kind {
+                                    case .directory:
+                                        childDirectories.append((child.path, childURL))
+                                    case .file:
+                                        childFiles.append((child.path, childURL, child.size ?? 0))
+                                    case .link:
+                                        continue
+                                    }
+                                }
+                                return (childDirectories, childFiles)
+                            }
+                        }
+                        files.append(contentsOf: result.files)
                     }
                 }
             } else {
