@@ -153,41 +153,59 @@ public enum PortSweeper {
         }
     }
 
+    private enum ConnectionAttempt {
+        case pending(fd: Int32)
+        case finished(Result)
+    }
+
     private static func sweepBatch(_ hosts: [IPv4], port: UInt16, timeout: TimeInterval, isCancelled: () -> Bool, onResult: (IPv4, Result) -> Void) {
         let started = Date()
         var pending: [(fd: Int32, host: IPv4)] = []
 
         for host in hosts {
-            let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
-            guard fd >= 0 else {
-                onResult(host, .failed(code: errno, immediate: false))
-                continue
-            }
-            var on: Int32 = 1
-            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
-            _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
-            var address = sockaddr_in()
-            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-            address.sin_family = sa_family_t(AF_INET)
-            address.sin_port = port.bigEndian
-            address.sin_addr = in_addr(s_addr: host.value.bigEndian)
-            let rc = withUnsafePointer(to: &address) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-                }
-            }
-            if rc == 0 {
-                close(fd)
-                onResult(host, .open)
-            } else if errno == EINPROGRESS {
+            switch startConnection(to: host, port: port) {
+            case .pending(let fd):
                 pending.append((fd, host))
-            } else {
-                let code = errno
-                close(fd)
-                onResult(host, code == ECONNREFUSED ? .refused : .failed(code: code, immediate: true))
+            case .finished(let result):
+                onResult(host, result)
             }
         }
 
+        waitForConnections(pending, started: started, timeout: timeout, isCancelled: isCancelled, onResult: onResult)
+    }
+
+    private static func startConnection(to host: IPv4, port: UInt16) -> ConnectionAttempt {
+        let fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+        guard fd >= 0 else {
+            return .finished(.failed(code: errno, immediate: false))
+        }
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr = in_addr(s_addr: host.value.bigEndian)
+        let rc = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        if rc == 0 {
+            close(fd)
+            return .finished(.open)
+        } else if errno == EINPROGRESS {
+            return .pending(fd: fd)
+        } else {
+            let code = errno
+            close(fd)
+            return .finished(code == ECONNREFUSED ? .refused : .failed(code: code, immediate: true))
+        }
+    }
+
+    private static func waitForConnections(_ initialPending: [(fd: Int32, host: IPv4)], started: Date, timeout: TimeInterval, isCancelled: () -> Bool, onResult: (IPv4, Result) -> Void) {
+        var pending = initialPending
         let deadline = started.addingTimeInterval(timeout)
         while !pending.isEmpty {
             let remaining = deadline.timeIntervalSinceNow
