@@ -26,24 +26,32 @@ public struct UpdatePreparer: Sendable {
         guard let signatureURL = offer.signatureURL else { throw UpdateError.unsigned }
         guard ReleaseFeed.isAllowed(offer.archiveURL), ReleaseFeed.isAllowed(signatureURL) else { throw UpdateError.insecureURL }
         guard offer.version > currentVersion else { throw UpdateError.notNewer }
+        try Task.checkCancellation()
         let fileManager = FileManager.default
         try? fileManager.removeItem(at: workFolder)
         try fileManager.createDirectory(at: workFolder, withIntermediateDirectories: true)
+        try Task.checkCancellation()
 
         let signature = try await downloadText(signatureURL)
+        try Task.checkCancellation()
         let archive = workFolder.appendingPathComponent("update.zip")
         try await FileDownloader(destination: archive, progress: progress).run(offer.archiveURL)
         try Task.checkCancellation()
 
         let data = try Data(contentsOf: archive, options: .mappedIfSafe)
+        try Task.checkCancellation()
         guard UpdateSignature.isValid(signature: signature, for: data, publicKey: publicKey) else {
             throw UpdateError.badSignature
         }
+        try Task.checkCancellation()
         let app = try UpdateInstaller.unpack(archive, into: workFolder.appendingPathComponent("unpacked"))
+        try Task.checkCancellation()
         let info = try UpdateInstaller.bundleInfo(of: app)
         guard info.identifier == bundleIdentifier, info.version == offer.version else { throw UpdateError.wrongApp }
         guard info.version > currentVersion else { throw UpdateError.notNewer }
+        try Task.checkCancellation()
         try UpdateInstaller.verifyCodeSignature(of: app)
+        try Task.checkCancellation()
         return app
     }
 
@@ -57,6 +65,10 @@ public struct UpdatePreparer: Sendable {
             return text
         } catch let error as UpdateError {
             throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch {
             throw UpdateError.download(error.localizedDescription)
         }

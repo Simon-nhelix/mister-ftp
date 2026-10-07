@@ -196,6 +196,9 @@ final class UpdateModel {
                         self.state = .downloading(offer, received: received, total: total > 0 ? total : offer.archiveSize)
                     }
                 }
+                // Cancellation may arrive after prepare returns, before this MainActor resumes.
+                // No suspension is allowed between this check and the synchronous swap.
+                try Task.checkCancellation()
                 guard !isBusy() else {
                     state = .available(offer)
                     return
