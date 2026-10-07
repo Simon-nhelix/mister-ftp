@@ -1,0 +1,25 @@
+name: macOS validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    name: macOS build and tests
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Whitespace check
+        run: git show --format= --check HEAD
+      - name: Tests (live MiSTer tests require explicit opt-in)
+        run: swift test
+      - name: Release app build
+        run: swift build -c release --product MiSTerFTP

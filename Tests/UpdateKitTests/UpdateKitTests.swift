@@ -12,6 +12,8 @@ final class UpdateKitTests: XCTestCase {
         XCTAssertLessThan(try XCTUnwrap(AppVersion("1.0.0")), try XCTUnwrap(AppVersion("1.0.1")))
         XCTAssertLessThan(try XCTUnwrap(AppVersion("1.9.9")), try XCTUnwrap(AppVersion("1.10")))
         XCTAssertLessThan(try XCTUnwrap(AppVersion("0.9")), try XCTUnwrap(AppVersion("1")))
+        XCTAssertLessThan(try XCTUnwrap(AppVersion("1")), try XCTUnwrap(AppVersion("1.0.1")))
+        XCTAssertLessThan(try XCTUnwrap(AppVersion("1.2")), try XCTUnwrap(AppVersion("1.2.0.1")))
         XCTAssertFalse(try XCTUnwrap(AppVersion("2.0")) < XCTUnwrap(AppVersion("2.0.0")))
         for bad in ["", "v", "1..0", "1.a", "-1.0", "1.2.3.4.5", "１.0"] {
             XCTAssertNil(AppVersion(bad), bad)
@@ -46,8 +48,23 @@ final class UpdateKitTests: XCTestCase {
         XCTAssertEqual(offer.archiveURL.lastPathComponent, "MiSTer-FTP-1.0.1.zip")
         XCTAssertEqual(offer.signatureURL?.lastPathComponent, "MiSTer-FTP-1.0.1.zip.sig")
         XCTAssertTrue(offer.notes.hasPrefix("- Fix Delete"))
+    }
+
+    func testLatestReleaseURL() {
         XCTAssertEqual(ReleaseFeed.latestReleaseURL(repository: "Simon-nhelix/mister-ftp")?.absoluteString,
                        "https://api.github.com/repos/Simon-nhelix/mister-ftp/releases/latest")
+
+        // Foundation percent-encodes spaces rather than rejecting this URL.
+        XCTAssertEqual(ReleaseFeed.latestReleaseURL(repository: "invalid repo with spaces")?.absoluteString,
+                       "https://api.github.com/repos/invalid%20repo%20with%20spaces/releases/latest")
+
+        // Typical format
+        XCTAssertEqual(ReleaseFeed.latestReleaseURL(repository: "owner/repo")?.absoluteString,
+                       "https://api.github.com/repos/owner/repo/releases/latest")
+
+        // Special characters
+        XCTAssertEqual(ReleaseFeed.latestReleaseURL(repository: "owner/repo.name-with_chars")?.absoluteString,
+                       "https://api.github.com/repos/owner/repo.name-with_chars/releases/latest")
     }
 
     func testOfferRules() throws {
@@ -65,13 +82,50 @@ final class UpdateKitTests: XCTestCase {
             object["assets"] = (object["assets"] as! [[String: Any]]).filter { !($0["name"] as! String).hasSuffix(".sig") }
         }
         XCTAssertNil(try XCTUnwrap(ReleaseFeed.offer(from: unsigned)).signatureURL)
+
+        // Title fallbacks
+        let noName = try release { $0["name"] = NSNull() }
+        XCTAssertEqual(ReleaseFeed.offer(from: noName)?.title, "v1.0.1")
+
+        let emptyName = try release { $0["name"] = "   \n" }
+        XCTAssertEqual(ReleaseFeed.offer(from: emptyName)?.title, "v1.0.1")
+
+        // Notes fallbacks
+        let noBody = try release { $0["body"] = NSNull() }
+        XCTAssertEqual(ReleaseFeed.offer(from: noBody)?.notes, "")
+
+        let emptyBody = try release { $0["body"] = "   \n" }
+        XCTAssertEqual(ReleaseFeed.offer(from: emptyBody)?.notes, "")
+
+        // Archive fallback: pick any valid zip if the exact match isn't present
+        let otherArchive = try release { object in
+            object["assets"] = [
+                ["name": "MiSTer-FTP-1.0.1-macOS.zip", "size": 100, "browser_download_url": "https://example.com/other.zip"]
+            ]
+        }
+        XCTAssertEqual(ReleaseFeed.offer(from: otherArchive)?.archiveURL.lastPathComponent, "other.zip")
+
+        // Wrong prefix in asset -> ignored
+        let wrongPrefix = try release { object in
+            object["assets"] = [
+                ["name": "Other-FTP-1.0.1.zip", "size": 100, "browser_download_url": "https://example.com/other.zip"]
+            ]
+        }
+        XCTAssertNil(ReleaseFeed.offer(from: wrongPrefix))
     }
 
     func testOnlySafeDownloadAddresses() {
         XCTAssertTrue(ReleaseFeed.isAllowed(URL(string: "https://github.com/a.zip")!))
         XCTAssertTrue(ReleaseFeed.isAllowed(URL(string: "http://127.0.0.1:8765/a.zip")!))
+        XCTAssertTrue(ReleaseFeed.isAllowed(URL(string: "http://[::1]:8765/a.zip")!))
+        XCTAssertTrue(ReleaseFeed.isAllowed(URL(string: "http://LOCALHOST:8765/a.zip")!))
         XCTAssertTrue(ReleaseFeed.isAllowed(URL(fileURLWithPath: "/tmp/a.zip")))
+        XCTAssertTrue(ReleaseFeed.isAllowed(URL(string: "file://localhost/tmp/a.zip")!))
         XCTAssertFalse(ReleaseFeed.isAllowed(URL(string: "http://github.com/a.zip")!))
+        XCTAssertFalse(ReleaseFeed.isAllowed(URL(string: "http://localhost.evil.example/a.zip")!))
+        XCTAssertFalse(ReleaseFeed.isAllowed(URL(string: "http:///a.zip")!))
+        XCTAssertFalse(ReleaseFeed.isAllowed(URL(string: "http://:8765/a.zip")!))
+        XCTAssertFalse(ReleaseFeed.isAllowed(URL(string: "file://example.com/tmp/a.zip")!))
         XCTAssertFalse(ReleaseFeed.isAllowed(URL(string: "ftp://example.com/a.zip")!))
     }
 
@@ -205,6 +259,26 @@ final class UpdateKitTests: XCTestCase {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "the helper did not open the app")
+    }
+
+    func testPrepareCancelledBeforeLocalIO() async throws {
+        let workFolder = root.appendingPathComponent("cancelled-work")
+        let offer = UpdateOffer(version: AppVersion("1.0.1")!, title: "Test", notes: "",
+                                pageURL: URL(string: "https://example.com")!,
+                                archiveURL: root.appendingPathComponent("missing.zip"), archiveSize: 0,
+                                signatureURL: root.appendingPathComponent("missing.zip.sig"))
+        let subject = UpdatePreparer(publicKey: "", bundleIdentifier: "com.example.misterftp-test",
+                                     currentVersion: AppVersion("1.0.0")!, workFolder: workFolder)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await subject.prepare(offer) { _, _ in }
+        }
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled preparation unexpectedly succeeded")
+        } catch is CancellationError {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: workFolder.path))
+        }
     }
 
     func testPrepareRefusesBadUpdates() async throws {

@@ -104,7 +104,11 @@ public enum ReleaseFeed {
     public static func isAllowed(_ url: URL) -> Bool {
         switch url.scheme?.lowercased() {
         case "https": return true
-        case "http", "file": return ["127.0.0.1", "localhost", "::1", ""].contains(url.host ?? "")
+        case "http":
+            guard let host = url.host else { return false }
+            return ["127.0.0.1", "localhost", "::1"].contains(host.lowercased())
+        case "file":
+            return ["127.0.0.1", "localhost", "::1", ""].contains((url.host ?? "").lowercased())
         default: return false
         }
     }
