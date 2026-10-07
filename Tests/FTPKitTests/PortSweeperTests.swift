@@ -20,7 +20,7 @@ final class PortSweeperTests: XCTestCase {
         XCTAssertEqual(results, [.open])
     }
 
-    func testBoundButNotListeningLoopbackPortIsRefused() throws {
+    func testBoundButNotListeningLoopbackPortIsUnavailable() throws {
         // Keep the port reserved for the entire sweep, so another process cannot
         // claim the ephemeral port between choosing it and connecting to it.
         let endpoint = try makeLoopbackSocket(listening: false)
@@ -33,7 +33,9 @@ final class PortSweeperTests: XCTestCase {
             results.append(result)
         }
 
-        XCTAssertEqual(results, [.refused])
+        // Darwin may refuse a bound non-listening port or silently drop the SYN.
+        // Both mean the port is unavailable; it must not report an open port.
+        XCTAssertTrue(results == [.refused] || results == [.noAnswer], "Unexpected result: \(results)")
     }
 
     func testCancellationStopsBeforeNextBatch() throws {

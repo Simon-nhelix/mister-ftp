@@ -21,7 +21,7 @@
 ## Updates and concurrency
 - Do not mechanically use Task.detached to move blocking I/O: it loses structured cancellation and still uses the cooperative executor. Inspect isolation and measure first.
 - Preserve cancellation checkpoints around update preparation and immediately before app replacement. A cancelled update must not install.
-- Test Foundation URL behavior on macOS: spaces may be percent-encoded; loopback hosts are case-insensitive and URL.host can include IPv6 brackets. Keep HTTPS and local-only test transport restrictions strict.
+- Test Foundation URL behavior on macOS: spaces may be percent-encoded; loopback hosts are case-insensitive and URL.host and URLComponents.host differ in IPv6 bracket handling. Keep HTTPS and local-only test transport restrictions strict.
 - Keep normalized AppVersion prefix comparisons covered (1 < 1.0.1 and 1.2 < 1.2.0.1).
 
 ## Delivery scope
