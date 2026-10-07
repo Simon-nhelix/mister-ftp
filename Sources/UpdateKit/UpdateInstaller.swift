@@ -35,7 +35,9 @@ public struct UpdatePreparer: Sendable {
         try await FileDownloader(destination: archive, progress: progress).run(offer.archiveURL)
         try Task.checkCancellation()
 
-        let data = try Data(contentsOf: archive, options: .mappedIfSafe)
+        let data = try await Task.detached {
+            try Data(contentsOf: archive, options: .mappedIfSafe)
+        }.value
         guard UpdateSignature.isValid(signature: signature, for: data, publicKey: publicKey) else {
             throw UpdateError.badSignature
         }
