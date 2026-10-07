@@ -208,70 +208,15 @@ public final class FTPConnection: @unchecked Sendable {
 
     /// Deletes a file, or a directory with everything inside it.
     public func deleteRecursively(_ item: FTPItem, progress: ((String) -> Void)? = nil) throws {
-        var filesToDelete: [String] = []
-        var dirsToRemove: [String] = []
-
-        func collect(_ current: FTPItem) throws {
-            if current.isDirectory {
-                for child in try list(current.path) {
-                    try collect(child)
-                }
-                dirsToRemove.append(current.path)
-            } else {
-                filesToDelete.append(current.path)
+        if item.isDirectory {
+            for child in try list(item.path) {
+                try deleteRecursively(child, progress: progress)
             }
-        }
-
-        try collect(item)
-
-        let chunkSize = 20
-
-        try guarded {
-            for chunkStart in stride(from: 0, to: filesToDelete.count, by: chunkSize) {
-                let chunkEnd = min(chunkStart + chunkSize, filesToDelete.count)
-                let chunkFiles = filesToDelete[chunkStart..<chunkEnd]
-
-                for file in chunkFiles {
-                    progress?(file)
-                    try send("DELE \(try checked(file))")
-                }
-
-                var firstError: Error?
-                for _ in chunkFiles {
-                    let reply = try readResponse()
-                    if reply.code == 421 {
-                        broken = true
-                        throw FTPError.server(code: 421, message: reply.message)
-                    }
-                    if !reply.isCompletion && firstError == nil {
-                        firstError = FTPError.server(code: reply.code, message: reply.message)
-                    }
-                }
-                if let error = firstError { throw error }
-            }
-
-            for chunkStart in stride(from: 0, to: dirsToRemove.count, by: chunkSize) {
-                let chunkEnd = min(chunkStart + chunkSize, dirsToRemove.count)
-                let chunkDirs = dirsToRemove[chunkStart..<chunkEnd]
-
-                for dir in chunkDirs {
-                    progress?(dir)
-                    try send("RMD \(try checked(dir))")
-                }
-
-                var firstError: Error?
-                for _ in chunkDirs {
-                    let reply = try readResponse()
-                    if reply.code == 421 {
-                        broken = true
-                        throw FTPError.server(code: 421, message: reply.message)
-                    }
-                    if !reply.isCompletion && firstError == nil {
-                        firstError = FTPError.server(code: reply.code, message: reply.message)
-                    }
-                }
-                if let error = firstError { throw error }
-            }
+            progress?(item.path)
+            try removeDirectory(item.path)
+        } else {
+            progress?(item.path)
+            try deleteFile(item.path)
         }
     }
 
