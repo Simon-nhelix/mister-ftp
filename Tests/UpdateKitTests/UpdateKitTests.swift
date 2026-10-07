@@ -46,8 +46,22 @@ final class UpdateKitTests: XCTestCase {
         XCTAssertEqual(offer.archiveURL.lastPathComponent, "MiSTer-FTP-1.0.1.zip")
         XCTAssertEqual(offer.signatureURL?.lastPathComponent, "MiSTer-FTP-1.0.1.zip.sig")
         XCTAssertTrue(offer.notes.hasPrefix("- Fix Delete"))
+    }
+
+    func testLatestReleaseURL() {
         XCTAssertEqual(ReleaseFeed.latestReleaseURL(repository: "Simon-nhelix/mister-ftp")?.absoluteString,
                        "https://api.github.com/repos/Simon-nhelix/mister-ftp/releases/latest")
+
+        // Edge case: spaces in the repository name
+        XCTAssertNil(ReleaseFeed.latestReleaseURL(repository: "invalid repo with spaces"))
+
+        // Typical format
+        XCTAssertEqual(ReleaseFeed.latestReleaseURL(repository: "owner/repo")?.absoluteString,
+                       "https://api.github.com/repos/owner/repo/releases/latest")
+
+        // Special characters
+        XCTAssertEqual(ReleaseFeed.latestReleaseURL(repository: "owner/repo.name-with_chars")?.absoluteString,
+                       "https://api.github.com/repos/owner/repo.name-with_chars/releases/latest")
     }
 
     func testOfferRules() throws {
