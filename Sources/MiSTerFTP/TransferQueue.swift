@@ -314,7 +314,12 @@ final class TransferQueue {
         }
 
         static func download(_ job: TransferJob, session: FTPSession) async throws {
-            let (item, target) = await MainActor.run { (job.remoteItem!, job.localTarget!) }
+            guard let (item, target) = await MainActor.run(body: {
+                guard let item = job.remoteItem, let target = job.localTarget else { return nil }
+                return (item, target)
+            }) else {
+                throw FTPError.cancelled
+            }
             var directories: [URL] = []
             var files: [(remote: String, local: URL, size: Int64)] = []
             if item.isDirectory {
