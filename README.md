@@ -1,6 +1,6 @@
 # MiSTer FTP
 
-[한국어](README.ko.md)
+[한국어](README.ko.md) | [日本語](README.ja.md)
 
 A small macOS app for moving files between your Mac and a [MiSTer FPGA](https://github.com/MiSTer-devel/Wiki_MiSTer/wiki). Open it, and it finds the MiSTer on your network and opens its SD card. There is nothing to set up.
 
