@@ -74,10 +74,12 @@ final class DragOutController: NSObject {
         }
     }
 
-    /// The row under the pointer. Rows scrolled out of the list lie outside their visible rect.
+    /// The row under the pointer. The visible rect of a row behind SwiftUI can reach
+    /// past the row, so the point has to land in the part of the row that shows.
     private func hitRow(at location: NSPoint, in window: NSWindow) -> DragOutRowView? {
         rows.allObjects.first { row in
-            row.window === window && row.visibleRect.contains(row.convert(location, from: nil))
+            row.window === window
+                && row.visibleRect.intersection(row.bounds).contains(row.convert(location, from: nil))
         }
     }
 
