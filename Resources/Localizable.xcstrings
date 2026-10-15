@@ -2490,18 +2490,18 @@
         }
       }
     },
-    "선택한 항목을 Mac의 다운로드 폴더로 받아요 (⌘D)" : {
+    "선택한 항목을 Mac의 다운로드 폴더로 받아요 (⌘D). 항목을 Finder로 끌어다 놓아도 돼요." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Download the selected items to your Mac (⌘D)"
+            "value" : "Download the selected items to your Mac (⌘D). You can also drag items to Finder."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "선택한 항목을 Mac의 다운로드 폴더로 받아요 (⌘D)"
+            "value" : "선택한 항목을 Mac의 다운로드 폴더로 받아요 (⌘D). 항목을 Finder로 끌어다 놓아도 돼요."
           }
         }
       }

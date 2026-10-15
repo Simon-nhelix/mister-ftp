@@ -23,7 +23,13 @@ final class TransferJob: Identifiable {
     /// Upload target directory, or the directory the download came from.
     let remoteDirectory: String
 
-    var state: State = .preparing
+    var state: State = .preparing {
+        didSet {
+            guard isFinished, let onFinish else { return }
+            self.onFinish = nil
+            onFinish(state)
+        }
+    }
     var totalBytes: Int64 = 0
     var doneBytes: Int64 = 0
     var fileCount = 0
@@ -36,6 +42,8 @@ final class TransferJob: Identifiable {
     fileprivate let localTarget: URL?
     fileprivate var plan: UploadPlan?
     fileprivate var cancelRequested = false
+    /// Runs once when the job ends, however it ends. A drop in Finder waits on it.
+    @ObservationIgnored fileprivate var onFinish: ((State) -> Void)?
 
     fileprivate init(upload url: URL, isFolder: Bool, into remoteDirectory: String) {
         direction = .upload
@@ -159,10 +167,29 @@ final class TransferQueue {
 
     func enqueueDownloads(_ items: [FTPItem], to folder: URL) {
         for item in items {
-            let target = uniqueLocalURL(in: folder, name: item.name)
-            reservedPaths.insert(target.path)
-            jobs.append(TransferJob(download: item, to: target))
+            addDownload(item, to: uniqueLocalURL(in: folder, name: item.name))
         }
+        startDownloads()
+    }
+
+    /// A download for a drop in Finder or another app. The file goes where the drop
+    /// landed, under a free name like any download, and `finished` runs once when the
+    /// job ends, so the app that took the drop learns when the file is complete.
+    func enqueueDroppedDownload(_ item: FTPItem, at url: URL, finished: @escaping (TransferJob.State) -> Void) {
+        let job = addDownload(item, to: uniqueLocalURL(in: url.deletingLastPathComponent(), name: url.lastPathComponent))
+        job.onFinish = finished
+        startDownloads()
+    }
+
+    @discardableResult
+    private func addDownload(_ item: FTPItem, to target: URL) -> TransferJob {
+        reservedPaths.insert(target.path)
+        let job = TransferJob(download: item, to: target)
+        jobs.append(job)
+        return job
+    }
+
+    private func startDownloads() {
         expanded = true
         startSampler()
         pump()

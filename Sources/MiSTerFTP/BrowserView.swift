@@ -372,7 +372,7 @@ private struct BrowserHeader: View {
             }
             .buttonStyle(SecondaryButtonStyle())
             .disabled(browser.selection.isEmpty)
-            .help("선택한 항목을 Mac의 다운로드 폴더로 받아요 (⌘D)")
+            .help("선택한 항목을 Mac의 다운로드 폴더로 받아요 (⌘D). 항목을 Finder로 끌어다 놓아도 돼요.")
 
             Button { browser.uploadWithPanel() } label: {
                 Label("올리기", systemImage: "square.and.arrow.up")
@@ -505,6 +505,7 @@ private struct FileListView: View {
                 LazyVStack(spacing: 1) {
                     ForEach(browser.visibleItems) { item in
                         FileRow(item: item, selected: browser.selection.contains(item.path))
+                            .background(DragOutRow(item: item, controller: browser.dragOut))
                             .id(item.path)
                             .onTapGesture { click(item) }
                             .contextMenu { itemMenu(item) }
@@ -786,11 +787,13 @@ private struct FileDropDelegate: DropDelegate {
     @Binding var targeted: Bool
     @Binding var count: Int
 
+    // Rows dragged out of this list are for other apps, not an upload.
     func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [.fileURL])
+        !browser.dragOut.isDragging && info.hasItemsConforming(to: [.fileURL])
     }
 
     func dropEntered(info: DropInfo) {
+        guard !browser.dragOut.isDragging else { return }
         count = info.itemProviders(for: [.fileURL]).count
         withAnimation(.easeOut(duration: 0.15)) { targeted = true }
     }
