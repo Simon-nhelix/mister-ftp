@@ -39,6 +39,8 @@ final class BrowserModel {
 
     private(set) var storages: [Place] = [Place(path: Places.sdCard, title: Places.displayName(for: Places.sdCard), symbol: "sdcard", kind: .storage, detail: "fat")]
     private(set) var shortcuts: [Place] = []
+    /// Starts drags of rows into Finder.
+    let dragOut = DragOutController()
 
     private var backStack: [String] = []
     private var forwardStack: [String] = []
@@ -68,6 +70,7 @@ final class BrowserModel {
         self.path = path
         self.items = items
         rebuild()
+        dragOut.browser = self
     }
 
     /// Sends NOOP every 30 s so the server keeps the session, and notices a lost MiSTer.
@@ -95,6 +98,7 @@ final class BrowserModel {
         keepAliveTask?.cancel()
         keepAliveTask = nil
         refreshTask?.cancel()
+        dragOut.stop()
     }
 
     private func noteFailure(_ error: Error) {
@@ -356,6 +360,25 @@ final class BrowserModel {
         panel.prompt = String(localized: "여기에 받기")
         panel.directoryURL = settings.downloadFolder
         if panel.runModal() == .OK, let url = panel.url { download(items, to: url) }
+    }
+
+    /// What a drag that starts on `item` carries: the selection when the row is in it.
+    /// Otherwise the row becomes the selection, as in Finder; with ⌘ or ⇧ it joins it.
+    func dragTargets(for item: FTPItem, modifiers: NSEvent.ModifierFlags) -> [FTPItem] {
+        if !selection.contains(item.path) {
+            if modifiers.contains(.command) || modifiers.contains(.shift) {
+                selection.insert(item.path)
+            } else {
+                selection = [item.path]
+            }
+            anchor = item.path
+        }
+        return selectedItems.filter { $0.kind != .link }
+    }
+
+    /// Downloads `item` to where a drag out of the list was dropped.
+    func downloadDropped(_ item: FTPItem, to url: URL, finished: @escaping (TransferJob.State) -> Void) {
+        transfers.enqueueDroppedDownload(item, at: url, finished: finished)
     }
 
     func uploadWithPanel() {
