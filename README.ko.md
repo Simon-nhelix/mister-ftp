@@ -1,6 +1,6 @@
 # MiSTer FTP
 
-[English](README.md)
+[English](README.md) | [日本語](README.ja.md)
 
 [MiSTer FPGA](https://github.com/MiSTer-devel/Wiki_MiSTer/wiki)와 파일을 주고받는 macOS 앱입니다. 실행하면 같은 네트워크에서 MiSTer를 자동으로 찾아 SD 카드를 엽니다. 따로 설정할 것은 없습니다.
 
